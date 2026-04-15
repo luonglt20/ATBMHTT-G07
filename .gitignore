@@ -1,0 +1,30 @@
+# AUTOMATION PENTEST SYSTEM (APS)
+# .gitignore - ONLY SOURCE & DOCS
+
+# Reports & Payloads (Sensitive/Non-source)
+reports/
+demo_audit/
+pwnd_payloads/
+APS_Audit_Report_*
+
+# Binaries và Executables (Cồng kềnh)
+*.exe
+*.dll
+*.sys
+*.obj
+*.pdb
+build/
+
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.zip
+*.log
