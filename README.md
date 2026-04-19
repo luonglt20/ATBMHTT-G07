@@ -13,7 +13,8 @@ AUTOMATION PENTEST SYSTEM là một framework mạnh mẽ được thiết kế 
 *   **AI-Enhanced Reporting**: Tích hợp trí tuệ nhân tạo để thẩm định rủi ro và đưa ra khuyến nghị khắc phục chuẩn chuyên gia.
 *   **Portable Auto-Compile (Zig Engine)**: Tự động biên dịch mã nguồn C thành file thực thi (.dll/.exe) ngay lập tức với công nghệ Tự cài đặt trình biên dịch Portable.
 *   **Just-In-Time Weaponization**: Cơ chế "Gác cổng" thông minh, chỉ sinh Payload và thư mục khi phát hiện lỗ hổng thực tế, giữ sạch không gian dự án.
-*   **Ghost-Protocol Tier-3 (No-IAT)**: Công nghệ tàng hình cao cấp, xóa bỏ mọi dấu vết hàm hệ thống (IAT) bằng kỹ thuật PEB Walking và API Hashing, giúp vượt qua các trình diệt virus (AV/EDR) hiện đại nhất.
+*   **Ghost-Protocol Tier-3 (No-IAT)**: Công nghệ tàng hình cao cấp, xóa bỏ mọi dấu vết hàm hệ thống (IAT) bằng kỹ thuật PEB Walking và API Hashing.
+*   **Ghost-Protocol Tier-4 (Total Silence)**: Trạng thái tàng hình tối thượng. Loại bỏ hoàn toàn sự phụ thuộc vào C Runtime (CRT-Free), sử dụng Stack Strings (không chuỗi tĩnh) và Indirect API Calls để vượt qua các cơ chế Behavioral Monitoring (Giám sát hành vi) của EDR chuyên nghiệp.
 
 ## 🛠️ Hướng dẫn Sử dụng (Nhanh)
 Để vận hành hệ thống, quý khách vui lòng sử dụng lệnh sau trong terminal:
@@ -284,6 +285,9 @@ APS sử dụng mô hình **Liên kết Chiến lược (Strategic Correlation)*
 
 > [!IMPORTANT]
 > **GHOST-PROTOCOL TIER-3 (ADVANCED STEALTH)**: Từ phiên bản v2.6, toàn bộ Payload C/DLL sẽ được bảo vệ bởi cơ chế **No-IAT**. File thực thi sẽ không chứa bất kỳ tên hàm Windows nào (như `system` hay `MessageBox`). Mọi liên kết sẽ được thực hiện động trong RAM lúc chạy thông qua thuật toán băm (API Hashing), mang lại tỷ lệ vượt qua AV cực cao.
+
+> [!CAUTION]
+> **GHOST-PROTOCOL TIER-4 (TOTAL SILENCE)**: Phiên bản v2.7 chuyển đổi toàn bộ engine sang chế độ **CRT-Free**. Payload sinh ra hoàn toàn là mã máy thuần túy, không để lại bất kỳ "dấu vân tay" nào của trình biên dịch và không sử dụng chuỗi tĩnh trên bộ nhớ (Stack Strings). Đây là cấp độ tàng hình cao nhất hiện nay, được thiết kế để "vô hình" trước Windows Defender và các hệ thống EDR cao cấp.
 
 ---
 
