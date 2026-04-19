@@ -40,7 +40,7 @@ class YaraScanner:
                 $aes_sbox = { 63 7C 77 7B F2 6B 6F C5 30 01 67 2B FE D7 AB 76 }
                 $rsa_const = { 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 } // Tạm thay bằng stub
             condition:
-                $aes_sbox
+                $aes_sbox or $rsa_const
         }
 
         rule Process_Hollowing_Patterns {

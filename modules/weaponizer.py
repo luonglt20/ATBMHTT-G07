@@ -625,7 +625,12 @@ typedef void* FARPROC;
 #define NULL ((void*)0)
 #define DLL_PROCESS_ATTACH 1
 
-// Thủ công cấu trúc PEB/LDR (Không cần winternl.h)
+// LIST_ENTRY (Cực kỳ quan trọng để duyệt PEB)
+typedef struct _LIST_ENTRY {
+    struct _LIST_ENTRY *Flink;
+    struct _LIST_ENTRY *Blink;
+} LIST_ENTRY, *PLIST_ENTRY;
+
 typedef struct _UNICODE_STRING {
     WORD Length;
     WORD MaximumLength;
@@ -633,8 +638,9 @@ typedef struct _UNICODE_STRING {
 } UNICODE_STRING, *PUNICODE_STRING;
 
 typedef struct _LDR_DATA_TABLE_ENTRY {
-    struct _LIST_ENTRY InMemoryOrderLinks;
-    struct _LIST_ENTRY InInitializationOrderLinks;
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
     PVOID DllBase;
     PVOID EntryPoint;
     DWORD SizeOfImage;
@@ -646,8 +652,8 @@ typedef struct _PEB_LDR_DATA {
     DWORD Length;
     BYTE Initialized;
     PVOID SsHandle;
-    struct _LIST_ENTRY InLoadOrderModuleList;
-    struct _LIST_ENTRY InMemoryOrderModuleList;
+    LIST_ENTRY InLoadOrderModuleList;
+    LIST_ENTRY InMemoryOrderModuleList;
 } PEB_LDR_DATA, *PPEB_LDR_DATA;
 
 typedef struct _PEB {

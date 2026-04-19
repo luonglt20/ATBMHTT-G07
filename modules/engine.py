@@ -87,9 +87,12 @@ class APSEngine:
         report_gen.add_section("Tầng 3: API Anomaly & IAT Audit", api_scanner.scan())
 
         # 5. DLL Hijacking
-        log("[+] Layer 4: DLL Hijacking...")
-        hijack_scanner = DLLHijackingScanner(target_path)
-        report_gen.add_section("Tầng 4: DLL Hijacking & Side-loading", hijack_scanner.scan())
+        try:
+            log("[+] Layer 4: DLL Hijacking...")
+            hijack_scanner = DLLHijackingScanner(target_path)
+            report_gen.add_section("Tầng 4: DLL Hijacking & Side-loading", hijack_scanner.scan())
+        except Exception as e:
+            log(f"  [!] Lỗi quét DLL Hijack: {e}", Fore.RED)
 
         # 6. Resource/Manifest
         log("[+] Layer 5: Resource & Manifest...")
@@ -97,9 +100,12 @@ class APSEngine:
         report_gen.add_section("Tầng 5: Resource & Manifest (LPE)", manifest_scanner.scan())
 
         # 7. Packer
-        log("[+] Layer 6: Packer/Entropy...")
-        packer_scanner = PackerDetector(target_path)
-        report_gen.add_section("Tầng 6: Packer, Entropy & Anti-RE", packer_scanner.scan())
+        try:
+            log("[+] Layer 6: Packer/Entropy...")
+            packer_scanner = PackerDetector(target_path)
+            report_gen.add_section("Tầng 6: Packer, Entropy & Anti-RE", packer_scanner.scan())
+        except Exception as e:
+            log(f"  [!] Lỗi quét Packer: {e}", Fore.RED)
 
         # 8. Crypto
         log("[+] Layer 7: Crypto Indicators...")
