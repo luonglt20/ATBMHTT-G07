@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const path = targetPathInput ? targetPathInput.value : '';
             const ai = document.getElementById('aiToggle') ? document.getElementById('aiToggle').checked : false;
             const pwn = document.getElementById('pwnToggle') ? document.getElementById('pwnToggle').checked : false;
+            const groqKey = document.getElementById('groqApiKey') ? document.getElementById('groqApiKey').value : '';
 
             if (!path) {
                 alert('Vui lòng chọn hoặc nhập đường dẫn mục tiêu!');
@@ -84,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path, ai, pwn })
+                    body: JSON.stringify({ path, ai, pwn, groqKey })
                 });
 
                 const reader = response.body.getReader();

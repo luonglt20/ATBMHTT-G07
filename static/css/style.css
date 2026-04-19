@@ -125,7 +125,8 @@ main {
     margin-bottom: 30px;
 }
 
-#targetPath {
+#targetPath, #groqApiKey {
+    width: 100%;
     flex: 1;
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border-glass);
@@ -135,9 +136,10 @@ main {
     font-size: 0.85rem;
     outline: none;
     transition: var(--transition-smooth);
+    box-sizing: border-box;
 }
 
-#targetPath:focus {
+#targetPath:focus, #groqApiKey:focus {
     border-color: var(--neon-cyan);
     box-shadow: 0 0 15px rgba(0, 245, 255, 0.1);
 }

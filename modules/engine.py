@@ -33,7 +33,7 @@ class APSEngine:
                 return f.read(2) == b'MZ'
         except: return False
 
-    def scan_file(self, target_path, output_dir="reports", ai_analyze=False, pwn=False, live_logger=None):
+    def scan_file(self, target_path, output_dir="reports", ai_analyze=False, pwn=False, live_logger=None, groq_key=""):
         """
         Scans a single file and returns the full result dictionary.
         live_logger: a function(string) to stream logs to UI
@@ -133,7 +133,7 @@ class APSEngine:
 
         if ai_analyze:
             log("[+] Layer 10: AI Behavior...")
-            ai_analyzer = AIAnalyzer(report_gen.results)
+            ai_analyzer = AIAnalyzer(report_gen.results, api_key=groq_key)
             report_gen.add_section("Tầng 10: AI Behavioral Summary", ai_analyzer.run())
 
         if pwn:

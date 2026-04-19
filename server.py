@@ -30,6 +30,7 @@ def scan():
     path = data.get('path')
     ai = data.get('ai', False)
     pwn = data.get('pwn', False)
+    groq_key = data.get('groqKey', '')
     
     if not path or not os.path.exists(path):
         return jsonify({"error": "Đường dẫn không tồn tại"}), 400
@@ -54,7 +55,7 @@ def scan():
                 
                 # Thực hiện quét file này
                 try:
-                    res = engine.scan_file(target, output_dir=REPORT_DIR, ai_analyze=ai, pwn=pwn)
+                    res = engine.scan_file(target, output_dir=REPORT_DIR, ai_analyze=ai, pwn=pwn, groq_key=groq_key)
                     yield f"data: {json.dumps({'event': 'file_result', 'result': res, 'index': i+1})}\n\n"
                 except Exception as file_err:
                     yield f"data: {json.dumps({'event': 'file_error', 'target': target, 'error': str(file_err)})}\n\n"

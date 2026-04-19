@@ -1,10 +1,19 @@
+# Core Analysis Engine
 pefile>=2023.2.7
 yara-python>=4.3.0
+psutil>=5.9.5
+requests>=2.31.0
+colorama>=0.4.6
+
+# UI / Dashboard Subsystem
+Flask>=3.0.0
+Flask-Cors>=4.0.0
+Jinja2>=3.1.2
+
+# Dynamic / Reversing
 frida-tools>=12.1.2
 mitmproxy>=9.0.0
-psutil>=5.9.5
-colorama>=0.4.6
-requests>=2.31.0
-Jinja2>=3.1.2
+
+# OPSEC / Cryptography
 pyzipper==0.3.6
 pycryptodomex>=3.19.0

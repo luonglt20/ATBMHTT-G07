@@ -4,20 +4,21 @@ import urllib.request
 from colorama import Fore, Style
 
 class AIAnalyzer:
-    def __init__(self, report_data):
+    def __init__(self, report_data, api_key=""):
         self.report_data = report_data
-        self.api_key = os.environ.get("OPENAI_API_KEY")
+        # Ưu tiên lấy api_key từ tham số, nếu không có lấy từ biến môi trường
+        self.api_key = api_key if api_key else os.environ.get("GROQ_API_KEY")
 
     def run(self):
         print(f"\n{Fore.BLUE}[+] PHASE 4: AI/LLM REVERSING ANALYSIS (Vector 20){Style.RESET_ALL}")
         if not self.api_key:
-            print(f" {Fore.YELLOW}[!] Bỏ qua Phân tích AI vì không tìm thấy biến môi trường OPENAI_API_KEY.{Style.RESET_ALL}")
-            print(f" {Fore.LIGHTBLACK_EX}[INFO] Hãy thiết lập `export OPENAI_API_KEY=sk-...` để AI tự động đọc hiểu Report.{Style.RESET_ALL}")
+            print(f" {Fore.YELLOW}[!] Bỏ qua Phân tích AI vì không tìm thấy Groq API Key.{Style.RESET_ALL}")
+            print(f" {Fore.LIGHTBLACK_EX}[INFO] Hãy thiết lập `export GROQ_API_KEY=gsk_...` hoặc nhập vào giao diện web.{Style.RESET_ALL}")
             return [{
                 "id": "AI-INFO",
                 "name": "AI Analysis Skipped",
                 "severity": "INFO",
-                "details": "Hãy thiết lập `export OPENAI_API_KEY=sk-...` để AI tự động đọc hiểu Report."
+                "details": "Hãy cung cấp Groq API Key (gsk_...) để AI chạy đọc hiểu Report."
             }]
 
         print(f" {Fore.GREEN}[-] Đang gửi dữ liệu thô lên Máy chủ LLM để dịch ngược logic...{Style.RESET_ALL}")
@@ -36,7 +37,7 @@ class AIAnalyzer:
         )
 
         data = json.dumps({
-            "model": "gpt-4o-mini",
+            "model": "llama3-70b-8192",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3
         }).encode('utf-8')
@@ -47,11 +48,11 @@ class AIAnalyzer:
         }
 
         try:
-            req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=10) as response:
+            req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 ai_response = result['choices'][0]['message']['content']
-                print(f" {Fore.GREEN}[OK] AI Đã Trả Lời: {ai_response[:100]}...{Style.RESET_ALL}")
+                print(f" {Fore.GREEN}[OK] Groq AI Đã Trả Lời: {ai_response[:100]}...{Style.RESET_ALL}")
                 return [{
                     "id": "AI-SUMMARY",
                     "name": "AI Executive Summary",
