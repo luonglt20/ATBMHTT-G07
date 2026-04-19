@@ -8,7 +8,7 @@ class LocalStorageScanner:
     Quét khu vực lưu trữ của ứng dụng/Thư mục mục tiêu:
     - File cấu hình chứa mật khẩu nhạy cảm.
     - File SQLite DB chứa dữ liệu người dùng.
-    - Quyền truy cập thư mục (ACLs).
+    - Dữ liệu rò rỉ của trình duyệt nhúng (Electron / Chromium / CEF).
     """
     def __init__(self, target_dir=None):
         self.target_dir = target_dir
@@ -48,7 +48,8 @@ class LocalStorageScanner:
         patterns = {
             "Config & Env Files": r".*\.(ini|config|json|xml|yaml|yml|env)$",
             "Local Database": r".*\.(db|sqlite|sqlite3)$",
-            "Sensitive Files": r".*(id_rsa|credentials|secrets.*)$"
+            "Sensitive Files": r".*(id_rsa|credentials|secrets.*)$",
+            "Chromium/Electron Artifacts": r"^(Cookies|Login Data|Web Data|Local State|History)$"
         }
         
         found_files = []
@@ -58,8 +59,12 @@ class LocalStorageScanner:
             for file in files:
                 file_path = os.path.join(root, file)
                 for cat, pat in patterns.items():
-                    if re.match(pat, file.lower()):
+                    if re.match(pat, file.lower(), re.IGNORECASE):
                         found_files.append((cat, file_path))
+                        
+                # Bắt Local State (DPAPI file)
+                if file.lower() == "local state":
+                    found_files.append(("Chromium/Electron Artifacts", file_path))
 
         for category, path in found_files:
             if "Database" in category:
@@ -76,11 +81,12 @@ class LocalStorageScanner:
             sensitive_tables = [t[0] for t in tables if any(k in t[0].lower() for k in ['user', 'pass', 'auth', 'token', 'cred'])]
             
             if sensitive_tables:
+                print(f"  {Fore.RED}[CRITICAL] Database '{os.path.basename(db_path)}' chứa các bảng nhạy cảm không mã hóa.{Style.RESET_ALL}")
                 self.findings.append({
-                    "id": "FS-DB-001",
-                    "name": "Sensitive Local SQLite Database",
+                    "id": "APS-VEC-060",
+                    "name": "Unencrypted Local Database",
                     "severity": "HIGH",
-                    "details": f"Database tại '{db_path}' chứa các bảng nhạy cảm: {sensitive_tables}."
+                    "details": f"Database tại '{db_path}' dưới dạng Plain-text chứa các bảng nghi ngờ: {sensitive_tables}. Dễ bị tấn công trích xuất nội bộ."
                 })
         except: pass
 
@@ -89,16 +95,27 @@ class LocalStorageScanner:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # Simple Password Pattern Hunt
-            cred_match = re.search(r"(?i)(password|passwd|pwd|secret|key)\s*[:=]\s*['\"]?([^'\"\n\s]{4,})['\"]?", content)
-            if cred_match:
+            if "Chromium" in category:
+                print(f"  {Fore.RED}[HIGH] Dấu vết truy vết DPAPI/Trình duyệt (Browser Stealing)!{Style.RESET_ALL}")
                 self.findings.append({
-                    "id": "FS-SEC-002",
+                    "id": "APS-VEC-062",
+                    "name": "Electron/Chromium Artifact Exposure",
+                    "severity": "HIGH",
+                    "details": f"Tìm thấy tệp tin '{filepath}' là mục tiêu chuyên dụng của thư viện ăn cắp Cookie/Mật khẩu trình duyệt. Nếu ứng dụng không dùng mã hóa AES256 cho file này, hacker có thể giải mã token session offline."
+                })
+                return
+
+            # Simple Password Pattern Hunt
+            cred_match = re.search(r"(?i)(password|passwd|pwd|secret|key|token)\s*[:=]\s*['\"]?([^'\"\n\s]{4,})['\"]?", content)
+            if cred_match:
+                print(f"  {Fore.YELLOW}[HIGH] Thông tin đăng nhập rò rỉ trong file cấu hình ({os.path.basename(filepath)}){Style.RESET_ALL}")
+                self.findings.append({
+                    "id": "APS-VEC-061",
                     "name": f"Cleartext Credential in {category}",
                     "severity": "HIGH",
                     "username": "System/File",
-                    "password": cred_match.group(2),
-                    "details": f"File '{filepath}' chứa thông tin xác thực ghi rõ bài văn bản (Cleartext).",
+                    "password": cred_match.group(2)[:5] + "...",
+                    "details": f"File '{filepath}' chứa thông tin xác thực ghi rõ bằng văn bản (Cleartext). Trích xuất: {cred_match.group(2)[:5]}...",
                     "is_vault_item": True
                 })
         except: pass

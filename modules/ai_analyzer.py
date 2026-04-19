@@ -23,14 +23,14 @@ class AIAnalyzer:
         print(f" {Fore.GREEN}[-] Đang gửi dữ liệu thô lên Máy chủ LLM để dịch ngược logic...{Style.RESET_ALL}")
         
         prompt = (
-            "Bạn là một 'Lead Exploit Strategist' chuyên gia về Windows PE Internals. "
-            "Nhiệm vụ của bạn là phân tích dữ liệu Pentest dưới đây để tìm ra 'Chuỗi tấn công' (Attack Chains) khả thi nhất. "
-            "Hãy kết nối các lỗ hổng rời rạc (ví dụ: Thiếu ASLR/DEP + Dangerous APIs + DLL Hijacking) thành một kịch bản xâm nhập hoàn chỉnh.\n\n"
+            "Bạn là một 'Lead Red Team Operator' chuyên gia về Windows PE Internals. "
+            "Nhiệm vụ của bạn là phân tích dữ liệu Pentest dưới đây để thiết lập một 'Kill Chain' (Chuỗi hạ gục) hoàn chỉnh. "
+            "Hãy xâu chuỗi các điểm yếu rời rạc (như Missing ASLR + Sensitive APIs + Writable Directory) thành một kịch bản xâm nhập chiếm quyền SYSTEM.\n\n"
             "Yêu cầu:\n"
-            "1. Xác định rủi ro kinh doanh cốt lõi (Core Business Risk).\n"
-            "2. Phân tích sự kết hợp giữa các tầng (Layer Correlation).\n"
-            "3. Gợi ý kỹ thuật khai thác nâng cao (angr, Frida, WinDbg script).\n"
-            "4. Đưa ra khuyến nghị khắc phục theo thứ tự ưu tiên chiến lược.\n\n"
+            "1. XÁC ĐỊNH MỤC TIÊU ƯU TIÊN (High-Value Target Identification).\n"
+            "2. THIẾT LẬP CHUỖI TẤN CÔNG (Exploit Chain: Recon -> Access -> Persistence -> LPE).\n"
+            "3. ĐỀ XUẤT CÁC KỸ THUẬT BYPASS (EDR/AV Evasion like Indirect Syscalls, DLL Proxying).\n"
+            "4. ĐÁNH GIÁ TỔNG QUAN VỀ KHẢ NĂNG BỊ 'PWNED' CỦA ỨNG DỤNG.\n\n"
             "KẾT QUẢ PENTEST RAW:\n"
             f"{json.dumps(self.report_data)[:4000]}"
         )

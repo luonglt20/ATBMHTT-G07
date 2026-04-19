@@ -1,41 +1,43 @@
 from colorama import Fore, Style
+import os
 
 class ManualAidReporter:
     """
-    Cung cấp thông tin trợ lý cho các lỗ hổng siêu phức tạp (Vector 10, 12, 13)
-    mà công cụ Black-box Python không thể ép buộc tạo lỗi ngẫu nhiên.
+    Cung cấp hướng dẫn Pentest thủ công cho các lỗi Logic phức tạp (Tầng 10):
+    - APS-VEC-010: UI Shatter Attacks
+    - APS-VEC-012: Race Conditions (TOCTOU)
+    - APS-VEC-017: Symbolic Execution (angr)
     """
     def __init__(self, target_path):
         self.target_path = target_path
         self.findings = []
         
     def scan(self):
-        print(f"{Fore.CYAN}  [-] Sinh Báo Cáo Kỹ Thuật Chuyên Sâu (Manual Pentest Aid)...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}  [-] Sinh Báo Cáo Hỗ Trợ Pentest Thủ Công Tier-3...{Style.RESET_ALL}")
         
+        # UI Message Exploitation
         self.findings.append({
-            "id": "MAN-UI-010",
-            "name": "UI Shatter Attack Vector (WM_COPYDATA)",
+            "id": "APS-VEC-010",
+            "name": "Advanced UI Message Exploitation (Shatter)",
             "severity": "INFO", 
-            "details": "Kiểm tra bằng công cụ Spy++. Rà soát các Handle (HWND) xem ứng dụng có chấp nhận Window Messages nhạy cảm không."
+            "details": "Kiểm tra bằng công cụ Spy++. Rà soát các Handle (HWND) xem ứng dụng có chấp nhận Window Messages nhạy cảm như WM_COPYDATA hay không. Đây là vector dẫn đến chiếm quyền process khác cùng Desktop."
         })
+
+        # Symbolic Execution for Logic bypass
         self.findings.append({
-            "id": "MAN-TCT-012",
-            "name": "TOCTOU (Time-Of-Check to Time-Of-Use) Race Conditions",
-            "severity": "INFO", 
-            "details": "Ứng dụng tương tác với hệ thống tệp. Kẻ tấn công có thể tạo Hardlinks kết hợp với BaitAndSwitch. Hãy sử dụng ProcMon để theo dõi các lệnh IRP_MJ_CREATE."
-        })
-        self.findings.append({
-            "id": "MAN-RPC-013",
-            "name": "Advanced IPC / ALPC Fuzzing",
-            "severity": "INFO", 
-            "details": "Nếu ứng dụng đăng ký giao thức ALPC (Advanced Local Procedure Call) với Windows, hãy dùng NtObjectManager. Fuzzing ALPC thường tìm ra 0-Day Local Privilege Escalation."
-        })
-        self.findings.append({
-            "id": "MAN-SYM-017",
-            "name": "Symbolic Execution & Snapshot Fuzzing (Vectors 16, 17, 18)",
+            "id": "APS-VEC-017",
+            "name": "Symbolic Execution Path Discovery",
             "severity": "CRITICAL", 
-            "details": "Sử dụng mẫu angr Script sau để tự động tìm Password/Input bẻ khóa Logic: `import angr; proj = angr.Project('target.exe'); simgr = proj.factory.simgr(); simgr.explore(find=0x401000)`."
+            "details": f"Ứng dụng phức tạp, khuyến nghị dùng angr để bẻ khóa Logic: `import angr; p = angr.Project('{os.path.basename(self.target_path)}'); state = p.factory.entry_state(); simgr = p.factory.simgr(state); simgr.explore(find=lambda s: b'Success' in s.posix.dumps(1))`"
+        })
+
+        # Race Condition (TOCTOU)
+        self.findings.append({
+            "id": "APS-VEC-012",
+            "name": "File System Race Condition (TOCTOU)",
+            "severity": "INFO", 
+            "details": "Theo dõi IRP_MJ_CREATE qua ProcMon. Thử nghiệm kỹ thuật BaitAndSwitch (Symlink transition) vào thời điểm ứng dụng Check file nhưng chưa Use file."
         })
         
-        print(f"  {Fore.GREEN}[OK] Đã in Báo cáo trợ lý vào Report chính (Vui lòng tự test bằng tay).{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}[OK] Đã tích hợp cẩm nang Pentest vào báo cáo.{Style.RESET_ALL}")
         return self.findings

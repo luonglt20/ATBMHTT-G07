@@ -4,73 +4,61 @@ from colorama import Fore, Style
 import hashlib
 
 class PatchDiffer:
+    """
+    Module phân tích thay đổi mã nguồn (Tầng 4):
+    - APS-VEC-022: Code Alteration / Patch Analysis
+    """
     def __init__(self, file1, file2):
         self.file1 = file1
         self.file2 = file2
 
-    def _hash_sections(self, filepath):
+    def _get_pe_metadata(self, filepath):
+        """Trích xuất mã băm các section và Entry Point."""
         try:
             pe = pefile.PE(filepath)
             hashes = {}
             for section in pe.sections:
-                sec_name = section.Name.decode('utf-8', errors='ignore').strip('\x00')
-                # Hashing raw data of the section
-                sec_hash = hashlib.sha256(section.get_data()).hexdigest()
-                hashes[sec_name] = sec_hash
+                name = section.Name.decode('utf-8', errors='ignore').strip('\x00')
+                hashes[name] = hashlib.sha256(section.get_data()).hexdigest()
+            
+            meta = {
+                "hashes": hashes,
+                "ep": pe.OPTIONAL_HEADER.AddressOfEntryPoint,
+                "subsystem": pe.OPTIONAL_HEADER.Subsystem
+            }
             pe.close()
-            return hashes
-        except Exception as e:
-            return None
+            return meta
+        except: return None
 
     def run(self):
-        print(f"\n{Fore.MAGENTA}[+] TẦNG 4: 1-DAY PATCH DIFFING (Vector 22){Style.RESET_ALL}")
-        print(f" [*] Đang so sánh nhị phân giữa:")
-        print(f"     File 1 (Old): {self.file1}")
-        print(f"     File 2 (New): {self.file2}")
-
+        print(f"\n{Fore.MAGENTA}[+] TẦNG 4: 1-DAY PATCH DIFFING Tier-3 (APS-VEC-022){Style.RESET_ALL}")
+        
         if not os.path.exists(self.file1) or not os.path.exists(self.file2):
-            print(f" {Fore.RED}[!] Lỗi: Không tìm thấy một trong hai file để so sánh.{Style.RESET_ALL}")
-            return {"status": "error", "reason": "File not found"}
+            print(f" {Fore.RED}[!] Lỗi: Thiếu tệp tin để đối chiếu.{Style.RESET_ALL}")
+            return None
 
-        hashes1 = self._hash_sections(self.file1)
-        hashes2 = self._hash_sections(self.file2)
+        meta1 = self._get_pe_metadata(self.file1)
+        meta2 = self._get_pe_metadata(self.file2)
 
-        if not hashes1 or not hashes2:
-            print(f" {Fore.RED}[!] Lỗi: Không thể bóc tách PE file để lấy mã băm.{Style.RESET_ALL}")
-            return {"status": "error", "reason": "Parse error"}
+        if not meta1 or not meta2: return None
 
-        results = {
-            "patched_sections": [],
-            "new_sections": [],
-            "deleted_sections": []
-        }
+        diffs = []
+        # So sánh Entry Point
+        if meta1["ep"] != meta2["ep"]:
+            diffs.append(f"Entry Point shifted: {hex(meta1['ep'])} -> {hex(meta2['ep'])}")
 
-        # Compare keys
-        all_keys = set(hashes1.keys()).union(set(hashes2.keys()))
-        has_diff = False
+        # So sánh Section Hashes
+        h1, h2 = meta1["hashes"], meta2["hashes"]
+        for sec in set(h1.keys()).union(h2.keys()):
+            if sec not in h1: diffs.append(f"New section: {sec}")
+            elif sec not in h2: diffs.append(f"Deleted section: {sec}")
+            elif h1[sec] != h2[sec]: diffs.append(f"Modified code in section: {sec}")
 
-        for k in all_keys:
-            if k in hashes1 and k not in hashes2:
-                results["deleted_sections"].append(k)
-                has_diff = True
-            elif k in hashes2 and k not in hashes1:
-                results["new_sections"].append(k)
-                has_diff = True
-            else:
-                if hashes1[k] != hashes2[k]:
-                    results["patched_sections"].append(k)
-                    has_diff = True
-
-        if has_diff:
-            print(f" {Fore.RED}[!] PHÁT HIỆN SỰ KHÁC BIỆT MÃ MÁY (VULNERABILITY PATCHED?){Style.RESET_ALL}")
-            if results["patched_sections"]:
-                print(f"  [-] Các phân vùng đã bị sửa đổi (Săn 1-Day tại đây): {', '.join(results['patched_sections'])}")
-            if results["new_sections"]:
-                print(f"  [-] Các phân vùng mới thêm vào: {', '.join(results['new_sections'])}")
-            if results["deleted_sections"]:
-                print(f"  [-] Các phân vùng bị xóa: {', '.join(results['deleted_sections'])}")
-            print(f"  {Fore.YELLOW}[!] Khuyến nghị: Load 2 file này vào plugin Diaphora hoặc BinDiff trên IDA Pro để soi mảng hợp ngữ.{Style.RESET_ALL}")
+        if diffs:
+            print(f" {Fore.RED}[!] PHÁT HIỆN BIẾN ĐỔI NHỊ PHÂN (1-Day Vulnerability Check):{Style.RESET_ALL}")
+            for d in diffs: print(f"  [-] {d}")
+            print(f"  {Fore.YELLOW}[*] Khuyến nghị: Đây là dấu hiệu của bản vá bảo mật. Hãy tập trung dịch ngược các vùng code bị thay đổi.{Style.RESET_ALL}")
         else:
-            print(f" {Fore.GREEN}[OK] 100% Khớp nhau. Không có bất kỳ dòng code Assembly nào bị thay đổi ở cấp độ vi mô.{Style.RESET_ALL}")
+            print(f" {Fore.GREEN}[OK] Hai phiên bản hoàn toàn khớp nhau về logic thực thi.{Style.RESET_ALL}")
 
-        return results
+        return diffs

@@ -1,12 +1,14 @@
 import pefile
 from colorama import Fore, Style
+import re
 
 class AntiProtectionScanner:
     """
-    Module rà quét công nghệ chống gỡ ngược (Expert Level):
-    - Vector 19: Hypervisor Detection (VMI Detection)
-    - Vector 39: Stealth Anti-Debugging (Polling/Timing)
-    - Vector 44: Side-Channel Timing Attacks (Heuristics)
+    Module rà quét công nghệ chống gỡ ngược & trốn tránh (Tầng 6):
+    - APS-VEC-051: High Entropy / Packed detection
+    - APS-VEC-054: Anti-Debugging / VM Detection
+    - APS-VEC-057: Sandbox Evasion logic
+    - APS-VEC-058: Instruction Timing (RDTSC)
     """
     def __init__(self, filepath):
         self.filepath = filepath
@@ -17,102 +19,84 @@ class AntiProtectionScanner:
             self.pe = None
 
     def scan(self):
-        print(f"{Fore.CYAN}  [-] Khởi động Module Anti-Protection & Evasion (Expert Level)...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}  [-] Khởi động Module Anti-Protection & Evasion Tier-3...{Style.RESET_ALL}")
         if not self.pe:
             return []
 
-        self._check_timing_check_imports()
-        self._check_hypervisor_detection_heuristics()
-        self._check_debug_artifact_names()
+        self._check_timing_and_rdtsc()
+        self._check_evasion_artifacts()
+        self._detect_heavens_gate()
         self._check_for_advanced_sandbox()
 
         return self.findings
 
+    def _detect_heavens_gate(self):
+        """APS-VEC-056: Phát hiện kỹ thuật Heaven's Gate (x86 to x64 switch)."""
+        # Pattern: 0xEA (JMP FAR) to 0x33 (64-bit segment)
+        # Đây là kỹ thuật dùng để chạy code 64-bit trong process 32-bit nhằm đánh lừa debugger 32-bit.
+        heavens_gate_pattern = b'\xEA....\x33\x00'
+        with open(self.filepath, 'rb') as f:
+            content = f.read()
+            if re.search(heavens_gate_pattern, content):
+                print(f"  {Fore.RED}[CRITICAL] Phát hiện kỹ thuật Heaven's Gate (x86->x64 switch)!{Style.RESET_ALL}")
+                self.findings.append({
+                    "id": "APS-VEC-056",
+                    "name": "Heaven's Gate Evasion Technique",
+                    "severity": "CRITICAL",
+                    "details": "Ứng dụng sử dụng kỹ thuật 'Heaven's Gate' để chuyển đổi phân đoạn CPU từ 32-bit sang 64-bit. Đây là dấu hiệu của malware đang cố gắng che giấu luồng thực thi khỏi các trình gỡ lỗi và phân tích tĩnh chuẩn."
+                })
+
+    def _check_timing_and_rdtsc(self):
+        """APS-VEC-058: Phát hiện RDTSC (Read Time-Step Counter) dùng cho Anti-Debug/VM."""
+        # Opcode: 0F 31 (RDTSC)
+        rdtsc_pattern = b'\x0F\x31'
+        with open(self.filepath, 'rb') as f:
+            content = f.read()
+            if content.count(rdtsc_pattern) > 5: # Ngưỡng heuristics
+                print(f"  {Fore.YELLOW}[HIGH] Phát hiện mật độ RDTSC cao (Timing Analysis detection)!{Style.RESET_ALL}")
+                self.findings.append({
+                    "id": "APS-VEC-058",
+                    "name": "Instruction Timing Analysis (RDTSC)",
+                    "severity": "HIGH",
+                    "details": "Tìm thấy nhiều lệnh RDTSC được dùng để đo thời gian thực thi. Ứng dụng có thể đang sử dụng kỹ thuật này để phát hiện sự chậm trễ gây ra bởi Breakpoints hoặc môi trường máy ảo."
+                })
+
+    def _check_evasion_artifacts(self):
+        """APS-VEC-054: Phát hiện VM/Debugger Artifacts."""
+        vm_strings = [
+            b"VBoxGuest", b"vmtoolsd", b"VMware", b"VirtualBox", b"QEMU",
+            b"Hyper-V", b"BOSH", b"XenVMM", b"wine_get_version",
+            b"x64dbg", b"ollydbg", b"ida64", b"wireshark"
+        ]
+        found = []
+        with open(self.filepath, 'rb') as f:
+            content = f.read()
+            for s in vm_strings:
+                if s in content: found.append(s.decode())
+
+        if found:
+            print(f"  {Fore.RED}[CRITICAL] Phát hiện danh sách đen Evasion: {found}{Style.RESET_ALL}")
+            self.findings.append({
+                "id": "APS-VEC-054",
+                "name": "VM/Debugger Environment Blacklist",
+                "severity": "CRITICAL",
+                "details": f"Ứng dụng chứa các tham chiếu đến môi trường ảo hóa hoặc công cụ gỡ lỗi: {', '.join(found)}. Payload sẽ tự hủy nếu phát hiện các chuỗi này."
+            })
+
     def _check_for_advanced_sandbox(self):
-        """Vector 10.1: Phát hiện cơ chế kiểm tra Sandbox cấp cao (Sử dụng Instruction Timing)."""
+        """APS-VEC-057: Phát hiện cơ chế kiểm tra Sandbox cấp cao."""
         sandbox_indicators = [b"IsSandbox", b"InSandbox", b"SbieDll", b"Cuckoo", b"JoeSandbox"]
         found = []
         with open(self.filepath, 'rb') as f:
             content = f.read()
             for ind in sandbox_indicators:
-                if ind in content:
-                    found.append(ind.decode())
+                if ind in content: found.append(ind.decode())
 
         if found:
-            print(f"  {Fore.RED}[CRITICAL] Phát hiện dấu vết Anti-Sandbox (Omni-Level): {found}{Style.RESET_ALL}")
+            print(f"  {Fore.RED}[CRITICAL] Phát hiện dấu vết Anti-Sandbox: {found}{Style.RESET_ALL}")
             self.findings.append({
-                "id": "PRO-SBX-010",
+                "id": "APS-VEC-057",
                 "name": "Advanced Sandbox Analysis Logic",
                 "severity": "CRITICAL",
-                "privilege": "Standard User",
-                "description": f"Ứng dụng chủ động phát hiện các môi trường Sandbox chuyên dụng ({', '.join(found)}). Đây là dấu hiệu của Malware cao cấp hoặc mã nguồn cực kỳ nhạy cảm."
-            })
-
-    def _check_timing_check_imports(self):
-        """Vector 44: Phát hiện các hàm đo thời gian nhạy cảm dùng cho Timing Attacks."""
-        timing_apis = [
-            b"GetTickCount", b"GetTickCount64", b"QueryPerformanceCounter",
-            b"GetSystemTimeAsFileTime", b"timeGetTime"
-        ]
-        
-        found_timing = []
-        if hasattr(self.pe, 'DIRECTORY_ENTRY_IMPORT'):
-            for entry in self.pe.DIRECTORY_ENTRY_IMPORT:
-                for imp in entry.imports:
-                    if imp.name in timing_apis:
-                        found_timing.append(imp.name.decode())
-
-        if len(found_timing) >= 2:
-            print(f"  {Fore.YELLOW}[HIGH] Phát hiện cơ chế so sánh thời gian (Timing Analysis): {found_timing}{Style.RESET_ALL}")
-            self.findings.append({
-                "id": "PRO-TIME-044",
-                "name": "Timing Side-Channel Analysis",
-                "severity": "HIGH",
-                "details": f"Ứng dụng nhập khẩu nhiều hàm đo thời gian: {', '.join(found_timing)}. Đây có thể là cơ chế chống Debugger bằng cách đo độ trễ nanon-giây hoặc tấn công Kênh kề (Side-channel)."
-            })
-
-    def _check_hypervisor_detection_heuristics(self):
-        """Vector 19: Tìm kiếm các chuỗi nhạy cảm dùng để phát hiện VM/Hypervisor."""
-        vm_strings = [
-            b"VBoxGuest", b"vmtoolsd", b"VMware", b"VirtualBox", b"QEMU",
-            b"Hyper-V", b"BOSH", b"XenVMM", b"wine_get_version"
-        ]
-        
-        found_vm = []
-        with open(self.filepath, 'rb') as f:
-            content = f.read()
-            for vm in vm_strings:
-                if vm in content:
-                    found_vm.append(vm.decode())
-
-        if found_vm:
-            print(f"  {Fore.RED}[CRITICAL] Phát hiện kỹ thuật Anti-VM / Hypervisor Detection!{Style.RESET_ALL}")
-            self.findings.append({
-                "id": "PRO-VM-019",
-                "name": "Hypervisor Evasion Trick",
-                "severity": "CRITICAL",
-                "details": f"Ứng dụng chủ động tìm kiếm dấu vết của máy ảo: {', '.join(found_vm)}. Kẻ tấn công sẽ bị đá văng (Evasion) nếu chạy trong Sandbox."
-            })
-
-    def _check_debug_artifact_names(self):
-        """Vector 39: Tìm các tên tệp tin gỡ lỗi phổ biến."""
-        debug_artifacts = [
-            b"x64dbg.exe", b"ollydbg.exe", b"ida.exe", b"wireshark.exe",
-            b"processhacker.exe", b"cheatengine-x86_64.exe"
-        ]
-        
-        found_artifacts = []
-        with open(self.filepath, 'rb') as f:
-            content = f.read()
-            for art in debug_artifacts:
-                if art in content:
-                    found_artifacts.append(art.decode())
-
-        if found_artifacts:
-            print(f"  {Fore.YELLOW}[MEDIUM] Phát hiện danh sách chặn Debugger (Blacklist): {found_artifacts}{Style.RESET_ALL}")
-            self.findings.append({
-                "id": "PRO-DBG-039",
-                "name": "Debugger Blacklist Detection",
-                "severity": "MEDIUM",
-                "details": f"Ứng dụng chứa danh sách các công cụ gỡ lỗi bị cấm: {', '.join(found_artifacts)}. Cần che giấu tiến trình gỡ lỗi trước khi nạp file."
+                "details": f"Ứng dụng chủ động phát hiện các môi trường Sandbox ({', '.join(found)})."
             })

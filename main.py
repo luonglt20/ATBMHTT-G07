@@ -32,6 +32,8 @@ from modules.driver_scanner import DriverScanner
 from modules.reporter import ReportGenerator
 from modules.ai_analyzer import AIAnalyzer
 from modules.weaponizer import Weaponizer
+from modules.exploit_verifier import ExploitVerifier
+from modules.yara_scanner import YaraScanner
 
 init(autoreset=True)
 
@@ -63,6 +65,35 @@ def scan_single_file(target_path, args):
     print(f"{Fore.YELLOW}============================================================{Style.RESET_ALL}")
 
     report_gen = ReportGenerator(target_path, args.output)
+
+    # --- DEEP PE FORENSICS (Metadata gathering) ---
+    pe_metadata = {}
+    try:
+        pe = pefile.PE(target_path)
+        pe_metadata = {
+            "entry_point": hex(pe.OPTIONAL_HEADER.AddressOfEntryPoint),
+            "image_base": hex(pe.OPTIONAL_HEADER.ImageBase),
+            "subsystem": pefile.SUBSYSTEM_TYPE.get(pe.OPTIONAL_HEADER.Subsystem, "Unknown"),
+            "sections": []
+        }
+        for section in pe.sections:
+            pe_metadata["sections"].append({
+                "name": section.Name.decode('utf-8', errors='ignore').strip('\x00'),
+                "virt_addr": hex(section.VirtualAddress),
+                "virt_size": hex(section.Misc_VirtualSize),
+                "raw_size": hex(section.SizeOfRawData),
+                "entropy": f"{section.get_entropy():.2f}"
+            })
+        report_gen.add_section("PE Technical Forensics", pe_metadata)
+    except:
+        pass
+
+    # --- ADVANCED YARA SCAN (TẦNG MỚI: Byte Pattern Matching) ---
+    print(f"\n{Fore.GREEN}[+] KHỞI ĐỘNG CẢM BIẾN YARA (ADVANCED SIGNATURES){Style.RESET_ALL}")
+    yara_scanner = YaraScanner(target_path)
+    yara_findings = yara_scanner.scan()
+    if yara_findings:
+        report_gen.add_section("YARA Signature Analysis", yara_findings)
 
     # --- TẦNG 1 & 2: MITIGATIONS & AUTHENTICODE ---
     print(f"\n{Fore.GREEN}[+] TẦNG 1-2: BINARY HARDENING & CODE SIGNING{Style.RESET_ALL}")
@@ -109,6 +140,18 @@ def scan_single_file(target_path, args):
     report_gen.add_section("Tầng 9 (Secondary): Driver Analysis", driver_scanner.scan())
 
     # --- TẦNG 10: AI & WEAPONIZATION ---
+    verification_results = []
+    if args.ai_analyze or args.pwn:
+        # Gom tất cả findings để xác thực
+        all_findings = []
+        for section in report_gen.results.values():
+            if isinstance(section, list):
+                all_findings.extend(section)
+        
+        verifier = ExploitVerifier(target_path, all_findings)
+        verification_results = verifier.run()
+        report_gen.add_section("Exploit Verification (AEVF)", verification_results)
+
     if args.ai_analyze:
         print(f"\n{Fore.GREEN}[+] TẦNG 10: AI BEHAVIORAL ANALYSIS & PWN{Style.RESET_ALL}")
         ai_analyzer = AIAnalyzer(report_gen.results)
@@ -116,7 +159,7 @@ def scan_single_file(target_path, args):
 
     if args.pwn:
         weaponizer = Weaponizer(target_path, report_gen.results)
-        weaponizer.run([])
+        weaponizer.run(verification_results)
 
     # --- FINAL: REPORTING ---
     print("\n" + "-"*60)

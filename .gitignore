@@ -3,6 +3,7 @@
 
 # Reports & Payloads (Sensitive/Non-source)
 reports/
+Payload/
 demo_audit/
 pwnd_payloads/
 APS_Audit_Report_*
