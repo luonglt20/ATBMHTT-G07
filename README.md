@@ -11,6 +11,8 @@ AUTOMATION PENTEST SYSTEM là một framework mạnh mẽ được thiết kế 
 *   **Privilege Escalation Detection**: Tìm kiếm các kịch bản leo thang đặc quyền thông qua Manifest và DLL Hijacking.
 *   **Secrets & Forensic Scavenging**: Tự động khai quật các thông tin nhạy cảm bị rò rỉ trong file cấu hình và cơ sở dữ liệu.
 *   **AI-Enhanced Reporting**: Tích hợp trí tuệ nhân tạo để thẩm định rủi ro và đưa ra khuyến nghị khắc phục chuẩn chuyên gia.
+*   **Portable Auto-Compile (Zig Engine)**: Tự động biên dịch mã nguồn C thành file thực thi (.dll/.exe) ngay lập tức với công nghệ Tự cài đặt trình biên dịch Portable.
+*   **Just-In-Time Weaponization**: Cơ chế "Gác cổng" thông minh, chỉ sinh Payload và thư mục khi phát hiện lỗ hổng thực tế, giữ sạch không gian dự án.
 
 ## 🛠️ Hướng dẫn Sử dụng (Nhanh)
 Để vận hành hệ thống, quý khách vui lòng sử dụng lệnh sau trong terminal:
@@ -88,6 +90,7 @@ Dành cho trải nghiệm trực quan và thực chiến:
 - Giao diện **Glassmorphism** chuyên nghiệp.
 - Hiển thị tiến trình qua **10 Tầng Tác chiến**.
 - Quản lý kho **Weapons Repository** trực tiếp trên Dashboard.
+- **AI Groq Integration**: Hỗ trợ nhập API Key trực tiếp trên giao diện để kích hoạt bộ não Llama 3 (70B) phân tích thực chiến.
 
 ---
 
@@ -274,6 +277,9 @@ APS sử dụng mô hình **Liên kết Chiến lược (Strategic Correlation)*
    - Lệnh mẫu: `x86_64-w64-mingw32-gcc -shared -o evil.dll evil.c`
 2. **Triển khai**: Copy file `.dll` vào thư mục của ứng dụng thực tế.
 3. **Kích hoạt**: Chạy ứng dụng. Nếu xuất hiện Popup "APS PoC" hoặc Calculator, lỗ hổng đã được xác nhận.
+
+> [!TIP]
+> **TÍNH NĂNG MỚI (AUTO-COMPILE)**: Bạn không cần phải tự biên dịch thủ công nữa! Engine Weaponizer v2.5 sẽ tự động dò tìm trình biên dịch (GCC/MinGW/Zig) và build file `.dll` cho bạn ngay sau khi quét xong. 
 
 ---
 
