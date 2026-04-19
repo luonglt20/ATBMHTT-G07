@@ -679,8 +679,9 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
 }
 """
 
-    def _get_ghost_protocol_header(self):
-
+    def _get_ghost_protocol_v3_header(self):
+        """Siêu tàng hình v3 (Dùng cho các Vector cũ)"""
+        return self._get_ghost_protocol_v4_header()
     def _get_stealth_header(self):
         """Tạo hàm giải mã XOR runtime cho Payload C"""
         return """
