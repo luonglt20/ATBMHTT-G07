@@ -106,22 +106,20 @@ def list_payloads():
 def browse_native():
     mode = request.args.get('mode', 'folder')
     try:
-        # Chạy một tiến trình Python riêng để tránh lỗi "Main Thread" của macOS
-        python_cmd = f"""
-import tkinter as tk
-from tkinter import filedialog
-root = tk.Tk()
-root.withdraw()
-root.attributes("-topmost", True)
-if '{mode}' == 'file':
-    res = filedialog.askopenfilename(title="Chọn tệp mục tiêu Pentest")
-else:
-    res = filedialog.askdirectory(title="Chọn thư mục mục tiêu Pentest")
-if res: print(res)
-root.destroy()
-"""
-        result = subprocess.check_output([sys.executable, "-c", python_cmd], text=True).strip()
+        # Sử dụng osascript thông qua System Events để không hiện icon Dock (Rocket icon)
+        if mode == 'file':
+            ascript = 'tell application "System Events" to POSIX path of (choose file with prompt "Chọn tệp mục tiêu Pentest")'
+        else:
+            ascript = 'tell application "System Events" to POSIX path of (choose folder with prompt "Chọn thư mục mục tiêu Pentest")'
+            
+        # Ép buộc hộp thoại hiện lên trên cùng
+        cmd = f"osascript -e 'activate application (path to frontmost application as text)' -e '{ascript}'"
+        
+        result = subprocess.check_output(cmd, shell=True, text=True).strip()
         return jsonify({"path": result if result else None})
+    except subprocess.CalledProcessError:
+        # Trường hợp người dùng nhấn nút Cancel
+        return jsonify({"path": None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
