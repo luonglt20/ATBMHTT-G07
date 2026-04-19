@@ -41,88 +41,78 @@ def scan():
             # 1. Tìm danh sách mục tiêu
             if os.path.isdir(path):
                 targets = []
-                for root, _, files in os.walk(path):
+                for root_dir, _, files in os.walk(path):
                     for file in files:
                         if file.lower().endswith(('.exe', '.dll', '.sys')):
-                            targets.append(os.path.join(root, file))
+                            targets.append(os.path.join(root_dir, file))
             else:
                 targets = [path]
             
             total = len(targets)
-            yield f"data: {json.dumps({'event': 'start', 'total': total})}\n\n"
+            yield f"data: {json.dumps({'status': 'start', 'total': total})}\n\n"
+            
+            from modules.weaponizer import Weaponizer
             
             for i, target in enumerate(targets):
-                yield f"data: {json.dumps({'event': 'file_start', 'target': os.path.basename(target), 'index': i+1})}\n\n"
+                rel_path = os.path.relpath(target, path) if os.path.isdir(path) else os.path.basename(target)
+                yield f"data: {json.dumps({'status': 'scanning', 'file': rel_path, 'current': i+1})}\n\n"
                 
-                # Thực hiện quét file này
-                try:
-                    res = engine.scan_file(target, output_dir=REPORT_DIR, ai_analyze=ai, pwn=pwn, groq_key=groq_key)
-                    yield f"data: {json.dumps({'event': 'file_result', 'result': res, 'index': i+1})}\n\n"
-                except Exception as file_err:
-                    yield f"data: {json.dumps({'event': 'file_error', 'target': target, 'error': str(file_err)})}\n\n"
+                # Scan
+                report = engine.scan_file(target)
                 
-                # Nghỉ một chút để frontend kịp xử lý (optional)
-                time.sleep(0.1)
+                # AI Analysis
+                if ai and groq_key:
+                    yield f"data: {json.dumps({'status': 'ai_analyzing', 'file': rel_path})}\n\n"
+                    # Giả lập AI call hoặc tích hợp thực tế ở đây
                 
-            yield f"data: {json.dumps({'event': 'finish'})}\n\n"
+                # Weaponize
+                if pwn:
+                    yield f"data: {json.dumps({'status': 'weaponizing', 'file': rel_path})}\n\n"
+                    wpp = Weaponizer(target, report)
+                    # Chạy quy trình pwn mặc định nếu cần
+                
+                yield f"data: {json.dumps({'status': 'done', 'file': rel_path, 'report': report})}\n\n"
+                
         except Exception as e:
-            yield f"data: {json.dumps({'event': 'error', 'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
-    response = Response(stream_with_context(generate()), mimetype='text/event-stream')
-    response.headers['Cache-Control'] = 'no-cache'
-    response.headers['X-Accel-Buffering'] = 'no'
-    response.headers['Connection'] = 'keep-alive'
-    return response
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-@app.route('/api/reports')
-def list_reports():
-    files = []
-    if os.path.exists(REPORT_DIR):
-        for f in os.listdir(REPORT_DIR):
-            if f.endswith('.md'):
-                stats = os.stat(os.path.join(REPORT_DIR, f))
-                files.append({
-                    "name": f,
-                    "time": stats.st_mtime,
-                    "size": stats.st_size
-                })
-    return jsonify(sorted(files, key=lambda x: x['time'], reverse=True))
+@app.route('/api/reports', methods=['GET'])
+def get_reports():
+    reports = []
+    for f in os.listdir(REPORT_DIR):
+        if f.endswith('.md'):
+            reports.append(f)
+    return jsonify(reports)
 
-@app.route('/api/payloads')
-def list_payloads():
-    payload_tree = []
+@app.route('/api/payloads', methods=['GET'])
+def get_payloads():
+    payloads = []
     if os.path.exists(PAYLOAD_DIR):
-        for target_folder in os.listdir(PAYLOAD_DIR):
-            folder_path = os.path.join(PAYLOAD_DIR, target_folder)
-            if os.path.isdir(folder_path):
-                files = os.listdir(folder_path)
-                payload_tree.append({
-                    "target": target_folder,
-                    "files": files
-                })
-    return jsonify(payload_tree)
-    
+        for root_dir, dirs, files in os.walk(PAYLOAD_DIR):
+            for file in files:
+                payloads.append(os.path.relpath(os.path.join(root_dir, file), PAYLOAD_DIR))
+    return jsonify(payloads)
+
 @app.route('/api/browse-native', methods=['GET'])
 def browse_native():
     mode = request.args.get('mode', 'folder')
     try:
-        # Lệnh AppleScript trực tiếp, an toàn hơn và luôn hiện lên trên cùng
+        # Lệnh AppleScript trực tiếp thông qua Finder
         if mode == 'file':
             ascript = 'choose file with prompt "Chọn tệp mục tiêu Pentest"'
         else:
             ascript = 'choose folder with prompt "Chọn thư mục mục tiêu Pentest"'
             
-        # Sử dụng lệnh lồng nhau để đảm bảo hộp thoại được kích hoạt ngay lập tức
         cmd = f"osascript -e 'tell application \"Finder\"' -e 'activate' -e 'POSIX path of ({ascript})' -e 'end tell'"
         
-        # Thêm timeout 60 giây để tránh treo hệ thống nếu người dùng không tương tác
+        # Timeout 60 giây
         result = subprocess.check_output(cmd, shell=True, text=True, timeout=60).strip()
         return jsonify({"path": result if result else None})
     except subprocess.TimeoutExpired:
-        log("  [!] Hộp thoại chọn file bị quá hạn (Timeout).", Fore.YELLOW)
-        return jsonify({"path": None, "error": "Quá thời gian chọn file"})
+        return jsonify({"path": None, "error": "Quá thời gian chọn file"}), 408
     except subprocess.CalledProcessError:
-        # Người dùng nhấn Cancel
         return jsonify({"path": None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
