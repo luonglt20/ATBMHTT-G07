@@ -1,6 +1,9 @@
 import os
 import random
 import subprocess
+import shutil
+import sys
+import importlib
 from colorama import Fore, Style
 class Weaponizer:
     """
@@ -24,6 +27,10 @@ class Weaponizer:
         base_output = "Payload"
         target_stem = os.path.splitext(os.path.basename(self.target_name))[0]
         self.output_dir = os.path.join(base_output, target_stem)
+
+        # Compiler cache for Zig Integration
+        self._compiler = None
+        self._compiler_type = None
 
     def _ensure_output_dir(self):
         """Chỉ tạo thư mục payload khi thực sự cần ghi file PoC"""
@@ -593,32 +600,81 @@ static void _poc_popup(const char* msg){{
             
         return path
 
+    def _find_compiler(self):
+        """Tìm C compiler trên hệ thống: gcc > mingw > zig cc > auto-install ziglang"""
+        if self._compiler:
+            return self._compiler
+
+        # 1. Tìm GCC / MinGW trên PATH
+        gcc_names = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc", "gcc"]
+        for name in gcc_names:
+            path = shutil.which(name)
+            if path:
+                self._compiler = path
+                self._compiler_type = "gcc"
+                return path
+
+        # 2. Tìm Zig (zig cc hoạt động như drop-in GCC)
+        zig_path = shutil.which("zig")
+        if not zig_path:
+            # Tìm zig trong site-packages/ziglang/ (pip install ziglang)
+            try:
+                import ziglang
+                candidate = shutil.which("zig", path=os.path.dirname(ziglang.__file__))
+                if candidate: zig_path = candidate
+            except ImportError: pass
+
+        if zig_path:
+            self._compiler = zig_path
+            self._compiler_type = "zig"
+            return zig_path
+
+        # 3. Auto-install ziglang qua pip (Portable, không cần Admin)
+        print(f"  {Fore.YELLOW}[*] Không tìm thấy GCC/MinGW. Đang cài đặt Zig compiler (Portable)...{Style.RESET_ALL}")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "ziglang"], 
+                           capture_output=True, check=True)
+            importlib.invalidate_caches()
+            import ziglang
+            importlib.reload(ziglang)
+            # Zig binary thường nằm trong folder package
+            pkg_path = os.path.dirname(ziglang.__file__)
+            candidate = shutil.which("zig", path=pkg_path)
+            if candidate:
+                self._compiler = candidate
+                self._compiler_type = "zig"
+                print(f"  {Fore.GREEN}[+] Đã cài đặt Zig compiler thành công!{Style.RESET_ALL}")
+                return self._compiler
+        except Exception as e:
+            print(f"  {Fore.RED}[!] Auto-install Zig thất bại: {e}{Style.RESET_ALL}")
+
+        print(f"  {Fore.RED}[!] KHÔNG TÌM THẤY TRÌNH BIÊN DỊCH. PoC sẽ chỉ ở dạng mã nguồn .c{Style.RESET_ALL}")
+        return None
+
     def _auto_compile(self, src_path, out_path, def_path=None):
-        """Tự động dò trình biên dịch và build mã độc"""
-        # 1. Thử tìm trình biên dịch chéo (Cross-compiler) cho Windows
-        compilers = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc", "gcc"]
-        target_compiler = None
-        
-        for c in compilers:
-            if subprocess.run(["which", c], capture_output=True).returncode == 0:
-                target_compiler = c
-                break
-        
-        if not target_compiler:
-            print(f"  {Fore.RED}[!] WARNING: Không tìm thấy trình biên dịch (gcc/mingw). Vui lòng cài đặt để Auto-Compile.{Style.RESET_ALL}")
+        """Tự động biên dịch mã độc bằng GCC hoặc Zig"""
+        compiler = self._find_compiler()
+        if not compiler:
             return False
 
-        # 2. Xây dựng lệnh biên dịch
-        cmd = [target_compiler, "-shared", "-o", out_path, src_path]
+        # Build command
+        if self._compiler_type == "zig":
+            # Sức mạnh của Zig: Biên dịch chéo sang Windows ngay trên Mac cực chuẩn
+            cmd = [compiler, "cc", "-target", "x86_64-windows-gnu", "-shared", "-o", out_path, src_path]
+        else:
+            # GCC/MinGW
+            cmd = [compiler, "-shared", "-o", out_path, src_path]
+
         if def_path:
             cmd.append(def_path)
-        cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"]) # Thư viện Windows cơ bản
 
-        # 3. Thực thi
+        # Thêm các thư viện Windows cơ bản
+        cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"])
+
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if res.returncode == 0:
-                print(f"  {Fore.GREEN}[SUCCESS]  Auto-Compiled: {os.path.basename(out_path)}{Style.RESET_ALL}")
+                print(f"  {Fore.GREEN}[SUCCESS]  Auto-Compiled: {os.path.basename(out_path)} (via {self._compiler_type}){Style.RESET_ALL}")
                 return True
             else:
                 print(f"  {Fore.RED}[FAILURE]  Compile Error: {res.stderr[:200]}...{Style.RESET_ALL}")
