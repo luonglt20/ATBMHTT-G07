@@ -45,6 +45,7 @@ python3 main.py -t <path_to_pe_file> --pwn
 6.  [**Cẩm nang Pentest & Reverse Engineering**](#6-cẩm-nang-pentest--reverse-engineering)
 7.  [**Hướng dẫn Khai thác & Sử dụng Payload (PoC)**](#7-hướng-dẫn-khai-thác--sử-dụng-payload-poc)
 8.  [**Danh mục 100 Payloads (Payload Master List)**](#8-danh-mục-100-payloads-payload-master-list)
+9.  [**Tài liệu Tham khảo (References)**](#-tài-liệu-tham-khảo-references)
 
 ---
 
@@ -445,3 +446,29 @@ Mọi Payload `.c` sinh ra cho các Vector trọng yếu đều được tích h
 ---
 *Chúc quý khách có một chiến dịch Pentest thành công và an toàn!*
 *Tài liệu được cập nhật ngày: 19/04/2026 - Đội ngũ phát triển APS.*
+
+---
+
+## 📚 Tài liệu Tham khảo (References)
+
+### I. Khung tiêu chuẩn và Quy trình Bảo mật (Security Frameworks & Standards)
+1. **[PTES]** *The Penetration Testing Execution Standard*, Release v1.1. [Online]. Available: http://www.pentest-standard.org/.
+2. **[MITRE]** *MITRE ATT&CK®: A Framework for Adversarial Tactics, Techniques, and Common Knowledge*, MITRE Corporation, 2024. [Online]. Available: https://attack.mitre.org/.
+3. **[NIST_815]** Karen Scarfone, Murugiah Souppaya, Amanda Cody, and Angela Orebaugh, *"Technical Guide to Information Security Testing and Assessment"*, NIST Special Publication 800-115, National Institute of Standards and Technology, Sep. 2008.
+
+### II. Giáo trình và Sách chuyên khảo (Textbooks)
+4. **[Windows_Internals]** Pavel Yosifovich, Mark E. Russinovich, David A. Solomon, and Alex Ionescu, *Windows Internals, Part 1: System architecture, processes, threads, memory management, and more*, 7th ed. Microsoft Press, 2017.
+5. **[Malware_Analysis]** Michael Sikorski and Andrew Honig, *Practical Malware Analysis: The Hands-On Guide to Dissecting Malicious Software*. No Starch Press, 2012.
+6. **[Shellcoder]** Chris Anley, John Heasman, Felix Lindner, and Gerardo Richarte, *The Shellcoder's Handbook: Discovering and Exploiting Security Flaws*, 2nd ed. Wiley Publishing, Inc., 2007.
+
+### III. Nghiên cứu Khoa học và Mô hình lý thuyết (Scientific Research)
+7. **[Shannon_1948]** Claude E. Shannon, *"A Mathematical Theory of Communication"*, The Bell System Technical Journal, Vol. 27, No. 3, pp. 379–423, 1948. (Ứng dụng Entropy trong phân tích nhị phân).
+8. **[Kill_Chain]** Hutchins, E., Cloppert, M., and Amin, R., *"Intelligence-Driven Computer Network Defense Informed by Analysis of Adversary Campaigns and Intrusion Kill Chains"*, Lockheed Martin Corporation, 2011.
+9. **[LLM_Sec]** Research on *"LLM-based Automated Vulnerability Reasoning and Binary Forensics"*, 2023-2024. (Cơ sở cho module AI Behavioral Analysis).
+
+### IV. Công cụ và Tài liệu Kỹ thuật (Technical Resources)
+10. **[erocarrera]** Ero Carrera, *"pefile: Python module to read and work with PE (Portable Executable) files"*. [Online]. Available: https://github.com/erocarrera/pefile.
+11. **[VirusTotal]** YARA Project, *"A malware identification and classification tool"*. [Online]. Available: https://github.com/VirusTotal/yara.
+12. **[MalAPI]** *MalAPI: Windows API monitoring and analysis for malware binary forensics*. [Online]. Available: https://malapi.io/.
+
+---
