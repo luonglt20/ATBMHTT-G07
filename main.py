@@ -32,6 +32,7 @@ from modules.driver_scanner import DriverScanner
 from modules.reporter import ReportGenerator
 from modules.ai_analyzer import AIAnalyzer
 from modules.weaponizer import Weaponizer
+from modules.exploit_verifier import ExploitVerifier
 
 init(autoreset=True)
 
@@ -115,8 +116,20 @@ def scan_single_file(target_path, args):
         report_gen.add_section("Tầng 10: AI Behavioral Summary", ai_analyzer.run())
 
     if args.pwn:
+        # Thu thập tất cả findings từ các tầng quét để xác thực
+        all_findings = []
+        for section_name, section_findings in report_gen.results.items():
+            if isinstance(section_findings, list):
+                all_findings.extend(section_findings)
+            elif isinstance(section_findings, dict) and "findings" in section_findings:
+                all_findings.extend(section_findings["findings"])
+
+        # Chạy ExploitVerifier để xác thực khả năng khai thác thực tế
+        verifier = ExploitVerifier(target_path, all_findings)
+        verified_results = verifier.run()
+
         weaponizer = Weaponizer(target_path, report_gen.results)
-        weaponizer.run([])
+        weaponizer.run(verified_results)
 
     # --- FINAL: REPORTING ---
     print("\n" + "-"*60)
