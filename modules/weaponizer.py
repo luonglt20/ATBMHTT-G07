@@ -586,7 +586,7 @@ static void _poc_popup(const char* msg){{
         """No prefix needed since it's already in a target-specific folder"""
         return filename
 
-    def _write_c(self, filename, content, compile_to_dll=False):
+    def _write_c(self, filename, content, compile_to_dll=True):
         self._ensure_output_dir()
         filename = self._get_prefixed_name(filename)
         path = os.path.join(self.output_dir, filename)
@@ -803,11 +803,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {{
     return TRUE;
 }}
 """
-        c_path = self._write_c(f"proxy_{dll_name.replace('.dll','')}.c", core + body)
+        c_path = self._write_c(f"proxy_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=False)
         
-        # 4. TỰ ĐỘNG BIÊN DỊCH VỚI FILE .DEF
-        dll_out_path = c_path.replace(".c", ".dll")
+        # 4. TỰ ĐỘNG BIÊN DỊCH VỚI FILE .DEF (Sử dụng lệnh biên dịch đặc biệt cho Proxy)
+        dll_out_path = os.path.join(self.output_dir, dll_name)
         def_full_path = os.path.join(self.output_dir, def_fname)
+        print(f"  {Fore.YELLOW}[*] Đang khởi tạo Proxy DLL: {dll_name}...{Style.RESET_ALL}")
         self._auto_compile(c_path, dll_out_path, def_path=def_full_path)
 
         # .bat deployer
