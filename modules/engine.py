@@ -33,22 +33,20 @@ class APSEngine:
                 return f.read(2) == b'MZ'
         except: return False
 
-    def scan_file(self, target_path, output_dir="reports", ai_analyze=False, pwn=False, live_logger=None, groq_key=""):
+    def scan_file(self, target_path, output_dir="reports", ai_analyze=False, pwn=False, groq_key=""):
         """
-        Scans a single file and returns the full result dictionary.
-        live_logger: a function(string) to stream logs to UI
+        Generator that scans a single file and yields status updates and final result.
+        Yields: {"status": "log", "message": "...", "color": "..."}
+        Final yield: {"status": "result", "data": {...}}
         """
-        def log(msg, color=Fore.WHITE):
-            formatted = f"{color}{msg}{Style.RESET_ALL}"
-            if live_logger:
-                live_logger(msg) # Raw msg for UI
-            print(formatted)
+        def get_log_payload(msg, color=Fore.WHITE):
+            return {"status": "log", "message": msg, "color": color}
 
         if not self.is_pe_file(target_path):
-            log(f"[!] Unsupported Format: {target_path}", Fore.RED)
-            return {"error": "Unsupported file format"}
+            yield get_log_payload(f"[!] Unsupported Format: {target_path}", Fore.RED)
+            return
 
-        log(f"[*] STARTING AUDIT: {os.path.basename(target_path)}", Fore.CYAN)
+        yield get_log_payload(f"[*] STARTING AUDIT: {os.path.basename(target_path)}", Fore.CYAN)
         report_gen = ReportGenerator(target_path, output_dir)
 
         # 1. PE Metadata
@@ -71,55 +69,55 @@ class APSEngine:
         except: pass
 
         # 2. Yara
-        log("[+] Layer 0: YARA Engine...")
+        yield get_log_payload("[+] Layer 0: YARA Engine...", Fore.GREEN)
         yara_scanner = YaraScanner(target_path)
         yara_findings = yara_scanner.scan()
         if yara_findings: report_gen.add_section("YARA Signature Analysis", yara_findings)
 
         # 3. Binary Protections
-        log("[+] Layer 1-2: Binary Hardening...")
+        yield get_log_payload("[+] Layer 1-2: Binary Hardening...", Fore.GREEN)
         bp_scanner = BinaryProtectionScanner(target_path)
         report_gen.add_section("Tầng 1-2: Mitigations & Authenticode", bp_scanner.scan())
 
         # 4. API Anomaly
-        log("[+] Layer 3: IAT Anomaly...")
+        yield get_log_payload("[+] Layer 3: IAT Anomaly...", Fore.GREEN)
         api_scanner = APIScanner(target_path)
         report_gen.add_section("Tầng 3: API Anomaly & IAT Audit", api_scanner.scan())
 
         # 5. DLL Hijacking
         try:
-            log("[+] Layer 4: DLL Hijacking...")
+            yield get_log_payload("[+] Layer 4: DLL Hijacking...", Fore.GREEN)
             hijack_scanner = DLLHijackingScanner(target_path)
             report_gen.add_section("Tầng 4: DLL Hijacking & Side-loading", hijack_scanner.scan())
         except Exception as e:
-            log(f"  [!] Lỗi quét DLL Hijack: {e}", Fore.RED)
+            yield get_log_payload(f"  [!] Lỗi quét DLL Hijack: {e}", Fore.RED)
 
         # 6. Resource/Manifest
-        log("[+] Layer 5: Resource & Manifest...")
+        yield get_log_payload("[+] Layer 5: Resource & Manifest...", Fore.GREEN)
         manifest_scanner = WindowsServicesManifestScanner(target_path)
         report_gen.add_section("Tầng 5: Resource & Manifest (LPE)", manifest_scanner.scan())
 
         # 7. Packer
         try:
-            log("[+] Layer 6: Packer/Entropy...")
+            yield get_log_payload("[+] Layer 6: Packer/Entropy...", Fore.GREEN)
             packer_scanner = PackerDetector(target_path)
             report_gen.add_section("Tầng 6: Packer, Entropy & Anti-RE", packer_scanner.scan())
         except Exception as e:
-            log(f"  [!] Lỗi quét Packer: {e}", Fore.RED)
+            yield get_log_payload(f"  [!] Lỗi quét Packer: {e}", Fore.RED)
 
         # 8. Crypto
-        log("[+] Layer 7: Crypto Indicators...")
+        yield get_log_payload("[+] Layer 7: Crypto Indicators...", Fore.GREEN)
         crypto_scanner = CryptoScanner(target_path)
         report_gen.add_section("Tầng 7: Hardcoded Secrets & Crypto", crypto_scanner.scan())
 
         # 9. Local Storage
-        log("[+] Layer 8: Local Storage...")
+        yield get_log_payload("[+] Layer 8: Local Storage...", Fore.GREEN)
         scan_dir = os.path.dirname(os.path.abspath(target_path))
         storage_scanner = LocalStorageScanner(scan_dir)
         report_gen.add_section("Tầng 8: Local Storage & Data Privacy", storage_scanner.scan())
 
         # 10. Ecosystem
-        log("[+] Layer 9: Ecosystem Audit...")
+        yield get_log_payload("[+] Layer 9: Ecosystem Audit...", Fore.GREEN)
         ad_scanner = ADScanner(target_path)
         report_gen.add_section("Tầng 9: Windows Ecosystem (AD & Kernel)", ad_scanner.scan())
         
@@ -138,22 +136,25 @@ class APSEngine:
             report_gen.add_section("Exploit Verification (AEVF)", verification_results)
 
         if ai_analyze:
-            log("[+] Layer 10: AI Behavior...")
+            yield get_log_payload("[+] Layer 10: AI Behavior Analysis...", Fore.BLUE)
             ai_analyzer = AIAnalyzer(report_gen.results, api_key=groq_key)
             report_gen.add_section("Tầng 10: AI Behavioral Summary", ai_analyzer.run())
 
         if pwn:
-            log("[!!] WEAPONIZING...")
+            yield get_log_payload("[!!] WEAPONIZING POV PAYLOADS...", Fore.YELLOW)
             weaponizer = Weaponizer(target_path, report_gen.results)
             weaponizer.run(verification_results)
 
         # Generate report
         report_path = report_gen.generate()
-        log(f"[+] Final Report Generated: {report_path}", Fore.GREEN)
+        yield get_log_payload(f"[+] Final Report Generated: {report_path}", Fore.GREEN)
 
-        return {
-            "target": target_path,
-            "results": report_gen.results,
-            "report_path": report_path,
-            "pe_metadata": pe_metadata
+        yield {
+            "status": "result",
+            "data": {
+                "target": target_path,
+                "results": report_gen.results,
+                "report_path": report_path,
+                "pe_metadata": pe_metadata
+            }
         }

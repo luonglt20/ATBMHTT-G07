@@ -49,29 +49,41 @@ def scan():
                 targets = [path]
             
             total = len(targets)
-            yield f"data: {json.dumps({'status': 'start', 'total': total})}\n\n"
-            
-            from modules.weaponizer import Weaponizer
+            yield f"data: {json.dumps({'event': 'start', 'total': total})}\n\n"
             
             for i, target in enumerate(targets):
-                rel_path = os.path.relpath(target, path) if os.path.isdir(path) else os.path.basename(target)
-                yield f"data: {json.dumps({'status': 'scanning', 'file': rel_path, 'current': i+1})}\n\n"
+                rel_path = os.path.basename(target)
+                yield f"data: {json.dumps({'event': 'file_start', 'target': rel_path, 'index': i+1})}\n\n"
                 
-                # Scan
-                report = engine.scan_file(target)
+                # Scan (using generator for real-time logs)
+                scan_generator = engine.scan_file(target, ai_analyze=ai, pwn=pwn, groq_key=groq_key)
                 
-                # AI Analysis
-                if ai and groq_key:
-                    yield f"data: {json.dumps({'status': 'ai_analyzing', 'file': rel_path})}\n\n"
-                    # Giả lập AI call hoặc tích hợp thực tế ở đây
+                # Color mapping for UI
+                from colorama import Fore
+                COLOR_MAP = {
+                    Fore.CYAN: "#00f5ff",
+                    Fore.GREEN: "#4ade80",
+                    Fore.RED: "#ff3131",
+                    Fore.YELLOW: "#ffee00",
+                    Fore.BLUE: "#bc13fe",
+                    Fore.WHITE: "#ffffff"
+                }
+
+                final_result = None
+                for update in scan_generator:
+                    if update.get('status') == 'log':
+                        # Send log to UI with mapped color
+                        color = COLOR_MAP.get(update.get('color'), "#4ade80")
+                        yield f"data: {json.dumps({'event': 'log', 'message': update['message'], 'color': color})}\n\n"
+                    elif update.get('status') == 'result':
+                        final_result = update['data']
                 
-                # Weaponize
-                if pwn:
-                    yield f"data: {json.dumps({'status': 'weaponizing', 'file': rel_path})}\n\n"
-                    wpp = Weaponizer(target, report)
-                    # Chạy quy trình pwn mặc định nếu cần
-                
-                yield f"data: {json.dumps({'status': 'done', 'file': rel_path, 'report': report})}\n\n"
+                if final_result:
+                    yield f"data: {json.dumps({'event': 'file_result', 'result': final_result, 'index': i+1})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'event': 'file_error', 'target': rel_path, 'error': 'Scan failed to return results', 'index': i+1})}\n\n"
+            
+            yield f"data: {json.dumps({'event': 'finish'})}\n\n"
                 
         except Exception as e:
             yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"

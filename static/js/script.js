@@ -142,6 +142,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         appendReportItem(res.report_path, res.target);
                         flashLayerProgress(index);
                     }
+                    else if (data.event === 'log') {
+                        addLog(data.message, data.color || '#4ade80');
+                    }
                     else if (data.event === 'finish') {
                         updateProgress(100, 'Mission completed. Strategic reports finalized.');
                         addLog(`Found ${currentFindings} vulnerabilities across ${totalTargets} targets.`, '#00f5ff');

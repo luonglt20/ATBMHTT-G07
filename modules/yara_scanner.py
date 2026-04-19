@@ -124,17 +124,23 @@ class YaraScanner:
                 
                 print(f"  {Fore.RED}[HIGH] YARA Engine Bắt Cảm Biến: Rule {match.rule}{Style.RESET_ALL}")
                 
-                # Format string output
+                # Format string output - Chỉ lấy text sạch, tránh NUL/Binary rác
                 hit_strings = []
                 for string_data in match.strings:
                     try:
-                        h = string_data.instances[0].matched_data.decode('utf-8', 'ignore')
-                        if len(h) > 2: hit_strings.append(h)
+                        raw_data = string_data.instances[0].matched_data
+                        # Chỉ lấy nếu là chuỗi ASCII in được (printable)
+                        if all(32 <= b <= 126 for b in raw_data):
+                            h = raw_data.decode('ascii').strip()
+                            if len(h) > 3: hit_strings.append(h)
+                        # Nếu là binary quan trọng và ngắn, có thể hiện Hex (tùy chọn)
                     except: pass
 
                 desc = match.meta.get('description', '')
                 if hit_strings:
-                    desc += f" (Khớp từ khóa: {', '.join(hit_strings[:3])})"
+                    # Lọc trùng và giới hạn bản in
+                    unique_hits = list(dict.fromkeys(hit_strings))
+                    desc += f" (Khớp: {', '.join(unique_hits[:3])})"
 
                 self.findings.append({
                     "id": v_id,

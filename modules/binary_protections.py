@@ -76,14 +76,15 @@ class BinaryProtectionScanner:
             # TÍNH NĂNG NÂNG CẤP: Phân tích mạo danh siêu dữ liệu (Metadata Spoofing)
             if hasattr(pe, 'FileInfo'):
                 for fileinfo in pe.FileInfo:
-                    for stringtable in fileinfo:
-                        for entry in stringtable.StringTable:
-                            for key, attr in entry.entries.items():
-                                if key == b'OriginalFilename':
-                                    orig_val = attr.decode('utf-8', errors='ignore').lower()
-                                    windows_bins = ['svchost.exe', 'lsass.exe', 'explorer.exe', 'cmd.exe', 'powershell.exe']
-                                    if orig_val in windows_bins and not results['is_signed']:
-                                        results['spoofed_metadata'] = orig_val
+                    for entry in fileinfo:
+                        if hasattr(entry, 'StringTable'):
+                            for table in entry.StringTable:
+                                for key, value in table.entries.items():
+                                    if key == b'OriginalFilename':
+                                        orig_val = value.decode('utf-8', errors='ignore').lower()
+                                        windows_bins = ['svchost.exe', 'lsass.exe', 'explorer.exe', 'cmd.exe', 'powershell.exe']
+                                        if orig_val in windows_bins and not results['is_signed']:
+                                            results['spoofed_metadata'] = orig_val
 
             # TÍNH NĂNG NÂNG CẤP: Thiếu Rich Header (Dấu hiệu payload sinh ra tự động từ các C2 framework)
             import codecs

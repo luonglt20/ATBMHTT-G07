@@ -7,7 +7,7 @@ class AIAnalyzer:
     def __init__(self, report_data, api_key=""):
         self.report_data = report_data
         # Ưu tiên lấy api_key từ tham số, nếu không có lấy từ biến môi trường
-        self.api_key = api_key if api_key else os.environ.get("GROQ_API_KEY")
+        self.api_key = (api_key if api_key else os.environ.get("GROQ_API_KEY", "")).strip()
 
     def run(self):
         print(f"\n{Fore.BLUE}[+] PHASE 4: AI/LLM REVERSING ANALYSIS (Vector 20){Style.RESET_ALL}")
@@ -37,19 +37,20 @@ class AIAnalyzer:
         )
 
         data = json.dumps({
-            "model": "llama3-70b-8192",
+            "model": "llama-3.1-8b-instant",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3
         }).encode('utf-8')
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": "APS-Pentest-Suite/3.0"
         }
 
         try:
             req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 ai_response = result['choices'][0]['message']['content']
                 print(f" {Fore.GREEN}[OK] Groq AI Đã Trả Lời: {ai_response[:100]}...{Style.RESET_ALL}")
@@ -57,13 +58,27 @@ class AIAnalyzer:
                     "id": "AI-SUMMARY",
                     "name": "AI Executive Summary",
                     "severity": "INFO",
-                    "details": ai_response
+                    "description": ai_response
                 }]
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8', 'ignore')
+            try:
+                error_json = json.loads(error_body)
+                error_msg = error_json.get('error', {}).get('message', str(e))
+            except:
+                error_msg = str(e)
+            print(f" {Fore.RED}[!] Lỗi HTTP AI API: {error_msg}{Style.RESET_ALL}")
+            return [{
+                "id": "AI-ERROR",
+                "name": "AI Analysis HTTP Error",
+                "severity": "MEDIUM",
+                "description": f"Lỗi HTTP từ Groq API: {error_msg}"
+            }]
         except Exception as e:
             print(f" {Fore.RED}[!] Lỗi khi gọi AI API: {e}{Style.RESET_ALL}")
             return [{
                 "id": "AI-ERROR",
                 "name": "AI Analysis Error",
                 "severity": "MEDIUM",
-                "details": f"Lỗi khi gọi AI API: {str(e)}"
+                "description": f"Lỗi kết nối hoặc xử lý AI: {str(e)}"
             }]
