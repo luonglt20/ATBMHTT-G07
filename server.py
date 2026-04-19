@@ -105,16 +105,20 @@ def list_payloads():
 def browse_native():
     mode = request.args.get('mode', 'folder')
     try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw() # Ẩn cửa sổ chính
+        root.attributes("-topmost", True) # Đảm bảo hộp thoại hiện lên trên cùng
+        
         if mode == 'file':
-            cmd = 'osascript -e "POSIX path of (choose file with prompt \\"Chọn tệp mục tiêu Pentest\\")"'
+            result = filedialog.askopenfilename(title="Chọn tệp mục tiêu Pentest")
         else:
-            cmd = 'osascript -e "POSIX path of (choose folder with prompt \\"Chọn thư mục mục tiêu Pentest\\")"'
+            result = filedialog.askdirectory(title="Chọn thư mục mục tiêu Pentest")
             
-        result = subprocess.check_output(cmd, shell=True, text=True).strip()
-        return jsonify({"path": result})
-    except subprocess.CalledProcessError:
-        # Người dùng nhấn Cancel
-        return jsonify({"path": None})
+        root.destroy()
+        return jsonify({"path": result if result else None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
