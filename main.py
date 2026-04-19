@@ -155,8 +155,12 @@ def main():
 
     targets = [os.path.join(root, file) for root, _, files in os.walk(target_path) for file in files if file.lower().endswith(('.exe', '.dll', '.sys'))] if os.path.isdir(target_path) else [target_path]
 
-    for t_path in targets:
+    total = len(targets)
+    print(f"{Fore.CYAN}[*] Found {total} target(s) to scan.{Style.RESET_ALL}")
+
+    for idx, t_path in enumerate(targets, 1):
         try:
+            print(f"\n{Fore.CYAN}[{idx}/{total}] Scanning: {os.path.basename(t_path)}{Style.RESET_ALL}")
             scan_single_file(t_path, args)
         except Exception as e:
             print(f"{Fore.RED}[!] Error in '{t_path}': {e}{Style.RESET_ALL}")
