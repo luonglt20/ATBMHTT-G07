@@ -2,6 +2,7 @@ import os
 import subprocess
 import json
 import time
+import sys
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 from modules.engine import APSEngine
@@ -105,19 +106,21 @@ def list_payloads():
 def browse_native():
     mode = request.args.get('mode', 'folder')
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        
-        root = tk.Tk()
-        root.withdraw() # Ẩn cửa sổ chính
-        root.attributes("-topmost", True) # Đảm bảo hộp thoại hiện lên trên cùng
-        
-        if mode == 'file':
-            result = filedialog.askopenfilename(title="Chọn tệp mục tiêu Pentest")
-        else:
-            result = filedialog.askdirectory(title="Chọn thư mục mục tiêu Pentest")
-            
-        root.destroy()
+        # Chạy một tiến trình Python riêng để tránh lỗi "Main Thread" của macOS
+        python_cmd = f"""
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+if '{mode}' == 'file':
+    res = filedialog.askopenfilename(title="Chọn tệp mục tiêu Pentest")
+else:
+    res = filedialog.askdirectory(title="Chọn thư mục mục tiêu Pentest")
+if res: print(res)
+root.destroy()
+"""
+        result = subprocess.check_output([sys.executable, "-c", python_cmd], text=True).strip()
         return jsonify({"path": result if result else None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
