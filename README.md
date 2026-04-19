@@ -13,6 +13,7 @@ AUTOMATION PENTEST SYSTEM là một framework mạnh mẽ được thiết kế 
 *   **AI-Enhanced Reporting**: Tích hợp trí tuệ nhân tạo để thẩm định rủi ro và đưa ra khuyến nghị khắc phục chuẩn chuyên gia.
 *   **Portable Auto-Compile (Zig Engine)**: Tự động biên dịch mã nguồn C thành file thực thi (.dll/.exe) ngay lập tức với công nghệ Tự cài đặt trình biên dịch Portable.
 *   **Just-In-Time Weaponization**: Cơ chế "Gác cổng" thông minh, chỉ sinh Payload và thư mục khi phát hiện lỗ hổng thực tế, giữ sạch không gian dự án.
+*   **Ghost-Protocol Tier-3 (No-IAT)**: Công nghệ tàng hình cao cấp, xóa bỏ mọi dấu vết hàm hệ thống (IAT) bằng kỹ thuật PEB Walking và API Hashing, giúp vượt qua các trình diệt virus (AV/EDR) hiện đại nhất.
 
 ## 🛠️ Hướng dẫn Sử dụng (Nhanh)
 Để vận hành hệ thống, quý khách vui lòng sử dụng lệnh sau trong terminal:
@@ -280,6 +281,9 @@ APS sử dụng mô hình **Liên kết Chiến lược (Strategic Correlation)*
 
 > [!TIP]
 > **TÍNH NĂNG MỚI (AUTO-COMPILE)**: Bạn không cần phải tự biên dịch thủ công nữa! Engine Weaponizer v2.5 sẽ tự động dò tìm trình biên dịch (GCC/MinGW/Zig) và build file `.dll` cho bạn ngay sau khi quét xong. 
+
+> [!IMPORTANT]
+> **GHOST-PROTOCOL TIER-3 (ADVANCED STEALTH)**: Từ phiên bản v2.6, toàn bộ Payload C/DLL sẽ được bảo vệ bởi cơ chế **No-IAT**. File thực thi sẽ không chứa bất kỳ tên hàm Windows nào (như `system` hay `MessageBox`). Mọi liên kết sẽ được thực hiện động trong RAM lúc chạy thông qua thuật toán băm (API Hashing), mang lại tỷ lệ vượt qua AV cực cao.
 
 ---
 
