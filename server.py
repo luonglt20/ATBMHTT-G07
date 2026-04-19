@@ -106,19 +106,23 @@ def list_payloads():
 def browse_native():
     mode = request.args.get('mode', 'folder')
     try:
-        # Sử dụng osascript thông qua System Events để không hiện icon Dock (Rocket icon)
+        # Lệnh AppleScript trực tiếp, an toàn hơn và luôn hiện lên trên cùng
         if mode == 'file':
-            ascript = 'tell application "System Events" to POSIX path of (choose file with prompt "Chọn tệp mục tiêu Pentest")'
+            ascript = 'choose file with prompt "Chọn tệp mục tiêu Pentest"'
         else:
-            ascript = 'tell application "System Events" to POSIX path of (choose folder with prompt "Chọn thư mục mục tiêu Pentest")'
+            ascript = 'choose folder with prompt "Chọn thư mục mục tiêu Pentest"'
             
-        # Ép buộc hộp thoại hiện lên trên cùng
-        cmd = f"osascript -e 'activate application (path to frontmost application as text)' -e '{ascript}'"
+        # Sử dụng lệnh lồng nhau để đảm bảo hộp thoại được kích hoạt ngay lập tức
+        cmd = f"osascript -e 'tell application \"Finder\"' -e 'activate' -e 'POSIX path of ({ascript})' -e 'end tell'"
         
-        result = subprocess.check_output(cmd, shell=True, text=True).strip()
+        # Thêm timeout 60 giây để tránh treo hệ thống nếu người dùng không tương tác
+        result = subprocess.check_output(cmd, shell=True, text=True, timeout=60).strip()
         return jsonify({"path": result if result else None})
+    except subprocess.TimeoutExpired:
+        log("  [!] Hộp thoại chọn file bị quá hạn (Timeout).", Fore.YELLOW)
+        return jsonify({"path": None, "error": "Quá thời gian chọn file"})
     except subprocess.CalledProcessError:
-        # Trường hợp người dùng nhấn nút Cancel
+        # Người dùng nhấn Cancel
         return jsonify({"path": None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
