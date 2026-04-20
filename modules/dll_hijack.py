@@ -36,18 +36,23 @@ class DLLHijackingScanner:
             except: pass
 
             suspicious_dlls = []
+            dll_imports_map = {}  # dll_name -> [func_names]
             mitigation_apis = []
             
             if hasattr(pe, 'DIRECTORY_ENTRY_IMPORT'):
                 for entry in pe.DIRECTORY_ENTRY_IMPORT:
                     dll_name = entry.dll.lower()
                     if dll_name in self.system_dlls: continue
-                    suspicious_dlls.append(dll_name.decode("utf-8", "ignore"))
+                    dll_decoded = dll_name.decode("utf-8", "ignore")
+                    suspicious_dlls.append(dll_decoded)
+                    funcs = []
                     for imp in entry.imports:
                         if imp.name:
                             api_name = imp.name.decode('utf-8', 'ignore')
+                            funcs.append(api_name)
                             if api_name in ["SetDefaultDllDirectories", "SetDllDirectoryW", "SetDllDirectoryA", "AddDllDirectory"]:
                                 mitigation_apis.append(api_name)
+                    dll_imports_map[dll_decoded] = funcs
 
             # TÍNH NĂNG NÂNG CẤP: Quét Delay Loaded DLLs (Vector 34: Lỗ hổng cực kỳ nghiêm trọng vì nó load động)
             delay_dlls = []
@@ -84,13 +89,23 @@ class DLLHijackingScanner:
             proxy_dlls = []
             privilege = "Standard User" if is_writable else "Administrator"
             
+            # Xác định thư mục hệ thống Windows để phân biệt Phantom vs Proxy
+            sys_root = os.environ.get('SystemRoot', r'C:\Windows')
+            sys_dirs = [
+                os.path.join(sys_root, 'System32'),
+                os.path.join(sys_root, 'SysWOW64'),
+            ]
+            
             for dll in suspicious_dlls:
-                # Kiểm tra xem DLL có tồn tại trong thư mục của tệp thực thi không
-                dll_path = os.path.normpath(os.path.join(dir_path, dll))
-                if not os.path.exists(dll_path):
-                    phantom_dlls.append(dll)
-                else:
+                dll_in_app = os.path.exists(os.path.normpath(os.path.join(dir_path, dll)))
+                dll_in_sys = any(os.path.exists(os.path.join(sd, dll)) for sd in sys_dirs)
+                
+                if dll_in_app and dll_in_sys:
+                    # DLL tồn tại cả trong app dir và system → Proxy (forward to _original)
                     proxy_dlls.append(dll)
+                else:
+                    # Mọi trường hợp khác → Phantom (drop payload DLL)
+                    phantom_dlls.append(dll)
 
             if phantom_dlls:
                 print(f"  {Fore.RED}[CRITICAL] Phát hiện Phantom DLL (Vector 32): {phantom_dlls[:3]} - FILE KHÔNG TỒN TẠI!{Style.RESET_ALL}")
@@ -101,7 +116,8 @@ class DLLHijackingScanner:
                     "severity": "CRITICAL",
                     "privilege": privilege,
                     "description": f"Ứng dụng cố nạp các DLL không tồn tại trong thư mục gốc: {', '.join(phantom_dlls[:3])}. Kẻ tấn công có thể đặt file mã độc vào để chiếm quyền điều khiển.",
-                    "dll_name": phantom_dlls[0]
+                    "dll_name": phantom_dlls[0],
+                    "dll_exports": dll_imports_map.get(phantom_dlls[0], [])
                 })
 
             if proxy_dlls:
@@ -113,7 +129,8 @@ class DLLHijackingScanner:
                     "severity": severity,
                     "privilege": privilege,
                     "description": f"Ứng dụng load các DLL có tồn tại: {', '.join(proxy_dlls[:3])}. Cần kỹ thuật Export Proxying (đổi tên gốc thành _original.dll) để tránh crash app.",
-                    "dll_name": proxy_dlls[0]
+                    "dll_name": proxy_dlls[0],
+                    "dll_exports": dll_imports_map.get(proxy_dlls[0], [])
                 })
 
             if not suspicious_dlls:
